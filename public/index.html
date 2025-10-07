@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splashin' Live Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Splashin' Live Dashboard</h1>
+    <p class="subtitle">Real-Time Player Locations</p>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="controls-container">
+    <div id="search-container">
+        <input type="text" id="player-search" placeholder="Search by name or team...">
+    </div>
+    <div id="not-located-container">
+        <h2>Players Not on Map</h2>
+        <ul id="not-located-list">
+            <!-- Players with null/invalid location will be listed here -->
+        </ul>
+    </div>
+  </div>
+  
+  <script>
+    const map = L.map('map').setView([33.04, -97.02], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // Initialize Marker Cluster Group with LESS STRICT requirements
+    const markers = L.markerClusterGroup({
+        maxClusterRadius: 60, 
+        disableClusteringAtZoom: 14, 
+        chunkedLoading: true, 
+        spiderfyOnMaxZoom: true 
+    });
+    map.addLayer(markers); 
+
+    const socket = io();
+    let currentMarkers = {}; // Keep track of Leaflet marker objects
+    let allPlayerLocations = []; // Store all player data for search filtering
+    let initialMapLoad = true; // Flag to control initial fitBounds
+
+    // --- Dynamic Avatar Marker Creation with Role Highlighting ---
+    const createAvatarIcon = (color, avatarUrl, role) => {
+      const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
+      const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
+      
+      let pinStyles = `background-color: ${color || '#3388ff'};`;
+      // For fallback pin, set border color to team color. Avatar markers keep a white border via CSS.
+      if (!avatarUrl) { 
+          // The border color for the fallback pin is now correctly set here.
+          pinStyles += `border-color: ${color || '#3388ff'};`;
+      }
+      
+      const markerHtml = `
+        <div class="marker-container ${role}-marker">
+          <div class="${baseClass}" style="${pinStyles}">
+            ${avatarImage}
+          </div>
+          <div class="marker-pulse-effect ${role}-pulse"></div>
+        </div>
+      `;
+      const iconSize = avatarUrl ? [40, 52] : [30, 42];
+      const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
+      
+      return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
+    };
+    
+    socket.on('connect', () => document.querySelector('.subtitle').textContent = 'Connected. Waiting for location data...');
+
+    socket.on('locationUpdate', (data) => {
+      allPlayerLocations = data.located;
+      const notLocatedPlayers = data.notLocated;
+
+      document.querySelector('.subtitle').textContent = `Tracking ${allPlayerLocations.length} players live.`; 
+      
+      // --- Update Players Not on Map List ---
+      const notLocatedList = document.getElementById('not-located-list');
+      notLocatedList.innerHTML = ''; 
+      if (notLocatedPlayers.length > 0) {
+        notLocatedPlayers.forEach(player => {
+          const listItem = document.createElement('li');
+          listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'}) - ${player.reason}`;
+          notLocatedList.appendChild(listItem);
+        });
+        document.getElementById('not-located-container').style.display = 'block';
+      } else {
+        document.getElementById('not-located-container').style.display = 'none';
+      }
+
+      // --- Apply current search filter or display all markers ---
+      filterMarkers(document.getElementById('player-search').value, initialMapLoad);
+      if (initialMapLoad) initialMapLoad = false; // Turn off flag after first update
+    });
+
+    // --- Search Functionality ---
+    const playerSearchInput = document.getElementById('player-search');
+    playerSearchInput.addEventListener('input', (e) => {
+        filterMarkers(e.target.value, false); // Don't fit all markers on new search term, only found ones
+    });
+
+    function filterMarkers(searchTerm, initialLoad = false) {
+        markers.clearLayers(); 
+
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const foundPlayerCoords = []; 
+        const updatedUids = new Set(); 
+
+        allPlayerLocations.forEach(user => { 
+            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, heading } = user;
+
+            const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
+            const fullTeamName = (teamName || '').toLowerCase();
+
+            const isMatch = (
+                !lowerCaseSearchTerm || 
+                fullName.includes(lowerCaseSearchTerm) ||
+                fullTeamName.includes(lowerCaseSearchTerm)
+            );
+
+            if (isMatch) {
+                updatedUids.add(u);
+                foundPlayerCoords.push(L.latLng(lat, lng));
+
+                const batteryIcon = isCharging ? '⚡' : '🔋';
+                const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
+                
+                let roleLabel = '';
+                if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
+                else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
+
+                const popupContent = `
+                    <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
+                      ${firstName} ${lastName || ''} ${roleLabel}
+                    </div>
+                    <div class="popup-body">
+                      <strong>Team:</strong> ${teamName || 'N/A'}<br>
+                      <strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br>
+                      <strong>Speed:</strong> ${speed.toFixed(1)} mph<br>
+                      <strong>Battery:</strong> ${batteryStatus}<br>
+                      <strong>Accuracy:</strong> ${accuracy.toFixed(1)} m
+                    </div>
+                    <div class="popup-footer">
+                      Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}
+                    </div>
+                  `;
+
+                const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role);
+
+                if (currentMarkers[u]) {
+                  currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
+                } else {
+                  currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent);
+                }
+                markers.addLayer(currentMarkers[u]);
+            }
+        });
+
+        // --- Adjust map view to found players ---
+        if (lowerCaseSearchTerm) { // Only adjust view if there's an active search
+            if (foundPlayerCoords.length > 0) {
+                if (foundPlayerCoords.length === 1) {
+                    map.setView(foundPlayerCoords[0], 16);
+                } else {
+                    const bounds = L.latLngBounds(foundPlayerCoords);
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            } else {
+                // No players found for active search term, map view remains unchanged from previous valid state.
+                console.log("No players found matching search term.");
+            }
+        } else if (initialLoad && allPlayerLocations.length > 0) { // On initial load with no search, fit all
+            const allCoords = allPlayerLocations.map(p => L.latLng(p.lat, p.lng));
+            if (allCoords.length > 0) { // Only fit if there are actual coordinates
+                const allBounds = L.latLngBounds(allCoords);
+                map.fitBounds(allBounds, { padding: [50, 50] });
+            }
+        }
+        // If search is empty AND not initial load, map view is NOT touched, preserving user's zoom/pan.
+
+        // Clean up currentMarkers cache for removed players (optional but good for memory)
+        for (const uid in currentMarkers) {
+            if (!updatedUids.has(uid)) {
+                delete currentMarkers[uid];
+            }
+        }
+    }
+    
+    socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
+  </script>
+</body>
+</html>

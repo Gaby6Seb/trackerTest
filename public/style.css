@@ -1,0 +1,179 @@
+/* General Body and Layout */
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+    margin: 0; padding: 0; background-color: #f0f2f5;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+}
+#map { flex-grow: 1; width: 100%; }
+.header {
+    background-color: #ffffff; padding: 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 1000; text-align: center;
+}
+h1 { color: #1c1e21; margin: 0; font-size: 24px; }
+.subtitle { margin: 5px 0 0 0; color: #65676b; font-size: 14px; }
+
+/* --- Controls Container (for search and not-located list) --- */
+#controls-container {
+    position: absolute;
+    top: 80px; /* Below the header */
+    right: 15px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Space between search and not-located list */
+}
+
+/* --- Search Container --- */
+#search-container {
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    max-width: 280px;
+}
+
+#player-search {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+/* --- Custom Marker Styles --- */
+.marker-container {
+    position: relative;
+    width: 40px;
+    height: 52px;
+}
+.marker-pin, .marker-pin-avatar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2; /* Ensure the pin is above the pulse effect */
+}
+
+/* Fallback Marker (No Avatar) */
+.marker-pin {
+    width: 30px; 
+    height: 30px; 
+    border-radius: 50% 50% 50% 0;
+    /* border-color will be set dynamically via inline style */
+    border-width: 4px; 
+    border-style: solid; 
+    transform: rotate(-45deg);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    /* Ensure a default background color even if JS fails to provide one */
+    background-color: #3388ff; 
+}
+
+/* Avatar Marker Styles */
+.marker-pin-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; justify-content: center; align-items: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    border: 3px solid #fff; /* Keep white border for avatar for contrast */
+}
+.marker-avatar-image {
+    width: 100%; height: 100%; border-radius: 50%;
+    object-fit: cover;
+}
+
+/* --- Pulsing Effect using pseudo-element --- */
+.marker-pulse-effect {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 50px; 
+    height: 50px; 
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1; 
+    pointer-events: none; 
+}
+
+.target-pulse {
+    animation: highlight-pulse-target 1.5s infinite;
+    animation-timing-function: ease-out;
+}
+.teammate-pulse {
+    animation: highlight-pulse-teammate 1.5s infinite;
+    animation-timing-function: ease-out;
+}
+
+@keyframes highlight-pulse-target {
+    0% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.8); }
+    70% { box-shadow: 0 0 0 25px rgba(255, 82, 82, 0); } 
+    100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.8); }
+}
+
+@keyframes highlight-pulse-teammate {
+    0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.8); }
+    70% { box-shadow: 0 0 0 25px rgba(76, 175, 80, 0); } 
+    100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.8); }
+}
+
+/* Leaflet Popup Customization */
+.leaflet-popup-content-wrapper { border-radius: 8px; padding: 0; overflow: hidden; }
+.leaflet-popup-content { margin: 0 !important; width: 220px !important; }
+.popup-header {
+    padding: 10px; font-size: 16px; font-weight: bold;
+    color: #fff; text-align: center;
+    display: flex; justify-content: center; align-items: center;
+}
+.popup-body { padding: 12px; font-size: 14px; line-height: 1.8; }
+.popup-body strong { color: #555; display: inline-block; width: 70px; }
+.popup-footer {
+    padding: 5px 12px; font-size: 11px; color: #888;
+    text-align: right; background-color: #f9f9f9;
+}
+/* Role Label in Popup */
+.role-label {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    color: #fff;
+    margin-left: 8px;
+    font-weight: bold;
+}
+.role-label.target { background-color: #d32f2f; }
+.role-label.teammate { background-color: #388e3c; }
+
+/* --- Not Located Players List --- */
+#not-located-container {
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    max-width: 280px;
+    max-height: 400px;
+    overflow-y: auto;
+    /* display is controlled by JS */
+}
+
+#not-located-container h2 {
+    margin-top: 0;
+    font-size: 16px;
+    color: #d32f2f; 
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+#not-located-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 13px;
+}
+
+#not-located-list li {
+    padding: 4px 0;
+    border-bottom: 1px dotted #eee;
+}
+
+#not-located-list li:last-child {
+    border-bottom: none;
+}
