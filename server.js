@@ -6,6 +6,17 @@ const axios = require('axios');
 
 // --- Server Setup ---
 const app = express();
+
+app.use((req, res, next) => {
+    // In production, Railway uses a reverse proxy that sets this header.
+    const proto = req.headers['x-forwarded-proto'];
+    if (process.env.NODE_ENV === 'production' && proto !== 'https') {
+        res.redirect(301, `https://${req.hostname}${req.url}`);
+        return;
+    }
+    next();
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
@@ -196,3 +207,4 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
+
