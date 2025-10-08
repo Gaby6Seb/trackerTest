@@ -24,39 +24,28 @@ const authData = {
     goture_meta_security: {},
 };
 
-// --- NEW: State Management for Concurrency Control ---
-
-// The "Lock": A flag to ensure only one API fetch runs at a time.
+// --- State Management for Concurrency Control ---
 let isFetching = false; 
-
-// The "Cache": Stores the result of the last successful API fetch.
 let lastSuccessfulData = null; 
-
-// The "Timer": A reference to our setInterval so we can start/stop it.
 let fetchInterval = null;
-const FETCH_INTERVAL_MS = 10000; // Increased to 10 seconds as requested
+const FETCH_INTERVAL_MS = 10000;
 
-// --- The Core API Fetching Logic (Modified with Lock) ---
-
+// --- The Core API Fetching Logic ---
 async function runApiRequests() {
-    // 1. Check the Lock
     if (isFetching) {
         console.log("API fetch already in progress. Skipping this interval.");
         return;
     }
-
-    // This is a safety check. If no one is connected, stop trying.
     if (io.engine.clientsCount === 0) {
         console.log("No clients connected, skipping API requests.");
         return;
     }
 
     try {
-        // 2. Set the Lock
         isFetching = true; 
         console.log("--- Starting API Request Cycle ---");
 
-        // ... [THE ENTIRE API LOGIC FROM YOUR ORIGINAL FILE REMAINS UNCHANGED HERE] ...
+        // --- 1. Authentication ---
         console.log("Attempting authentication...");
         const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
@@ -66,26 +55,21 @@ async function runApiRequests() {
         const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
         console.log("Authentication successful.");
 
-        console.log("Fetching dashboard data for current user context...");
+        // --- 2. Fetch All Player Data ---
+        console.log("Fetching all player data to build roster...");
+        // ... (Code to fetch dashboard and all other players remains the same)
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
         const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
-        const dashboardData = dashboardResponse.data;
-
         const richDataMap = new Map();
-        const targets = dashboardData.targets || [];
-        const myTeam = dashboardData.myTeam || [];
-        const currentPlayer = dashboardData.currentPlayer;
-        
-        if (currentPlayer) richDataMap.set(currentPlayer.id, currentPlayer);
+        const targets = dashboardResponse.data.targets || [];
+        const myTeam = dashboardResponse.data.myTeam || [];
+        if (dashboardResponse.data.currentPlayer) richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
-        console.log(`Initialized richDataMap with ${richDataMap.size} players from dashboard.`);
 
-        console.log("Fetching ALL other players from game roster using pagination...");
         let allOtherTeams = [];
         let currentCursor = 0;
         let hasMorePages = true;
-        
         while (hasMorePages) {
             const playersUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/players?cursor=${currentCursor}&filter=all&sort=alphabetical&group=team`;
             const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
@@ -97,26 +81,58 @@ async function runApiRequests() {
                 hasMorePages = false;
             }
         }
-        
         allOtherTeams.flatMap(team => team.players || []).forEach(p => {
             if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
         });
-        console.log(`Total unique players in richDataMap: ${richDataMap.size}`);
+        console.log(`Total unique players in roster: ${richDataMap.size}`);
+        // --- End Player Fetching ---
 
         if (richDataMap.size === 0) {
             console.log("No players found in the game roster.");
-            const emptyData = { located: [], notLocated: [] };
-            io.emit('locationUpdate', emptyData);
-            lastSuccessfulData = emptyData; // Cache the empty result
+            lastSuccessfulData = { located: [], notLocated: [] };
+            io.emit('locationUpdate', lastSuccessfulData);
             return;
         }
 
+        // --- 3. NEW: Request Fresh Location Updates ---
+        console.log(`Requesting fresh location updates for ${richDataMap.size} players...`);
+        const allPlayerUids = Array.from(richDataMap.keys());
+        const locationRequestUrl = `${SUPABASE_URL}/rest/v1/rpc/location-request`;
+
+        // Create an array of POST request promises, one for each player
+        const requestPromises = allPlayerUids.map(uid => {
+            const requestData = {
+                uid: uid,
+                queue_name: "location-request"
+            };
+            return axios.post(locationRequestUrl, requestData, { headers: commonHeaders });
+        });
+
+        try {
+            // Execute all requests in parallel and wait for them to settle.
+            // Using 'allSettled' is safer than 'all' because it won't stop if one request fails.
+            const results = await Promise.allSettled(requestPromises);
+            const failedRequests = results.filter(r => r.status === 'rejected').length;
+            if (failedRequests > 0) {
+                console.warn(`${failedRequests} location requests failed. Continuing anyway.`);
+            } else {
+                console.log("Successfully sent all location requests.");
+            }
+        } catch (e) {
+             // This catch is a fallback, but allSettled should prevent it from being hit for individual failures.
+             console.error("An unexpected error occurred while sending location requests.", e);
+        }
+        // --- END NEW SECTION ---
+
+
+        // --- 4. Fetch all Locations ---
         console.log("Fetching raw location updates from Supabase...");
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
         const locationResults = locationResponse.data;
         console.log(`Received ${locationResults.length} raw location updates.`);
 
+        // ... (The rest of the processing logic remains the same)
         const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
         const teammateIds = new Set(myTeam.map(p => p.id).filter(Boolean));
         const locatedPlayers = [];
@@ -140,14 +156,9 @@ async function runApiRequests() {
 
             locatedPlayers.push({ u: locData.u, lat, lng, firstName: richData.first_name || 'Player', lastName: richData.last_name || '', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role, status: locData.a, speed: parseFloat(locData.s || '0'), batteryLevel: parseFloat(locData.bl || '0'), isCharging: locData.ic, updatedAt: locData.up, accuracy: parseFloat(locData.ac || '0'), heading: parseFloat(locData.h || '0') });
         });
-
-        // --- Important Update ---
-        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers };
         
-        // 3. Update the Cache with the fresh data
+        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers };
         lastSuccessfulData = dataToEmit; 
-
-        // 4. Broadcast the fresh data to ALL clients
         io.emit('locationUpdate', dataToEmit);
 
         console.log(`Successfully processed and broadcast ${locatedPlayers.length} players to map.`);
@@ -155,40 +166,29 @@ async function runApiRequests() {
 
     } catch (error) {
         console.error("API Error during runApiRequests:", error.message);
-        // Don't update cache on error, keep the last known good data
     } finally {
-        // 5. Release the Lock, allowing the next fetch to run
         isFetching = false;
     }
 }
 
-// --- MODIFIED: Connection and Disconnection Logic ---
-
+// --- Connection and Disconnection Logic (Unchanged) ---
 io.on('connection', (socket) => {
     console.log(`A user connected. Total clients: ${io.engine.clientsCount}`);
-
-    // Immediately send the latest cached data to the new user.
-    // This provides an instant view without waiting for the next API call.
     if (lastSuccessfulData) {
         socket.emit('locationUpdate', lastSuccessfulData);
         console.log("Sent cached data to the new user.");
     }
-
-    // If this is the VERY FIRST user to connect, start the interval.
     if (io.engine.clientsCount === 1) {
         console.log("First client connected. Kicking off initial data fetch and starting interval.");
-        runApiRequests(); // Run immediately for the first user
+        runApiRequests();
         fetchInterval = setInterval(runApiRequests, FETCH_INTERVAL_MS);
     }
-
     socket.on('disconnect', () => {
         console.log(`User disconnected. Total clients remaining: ${io.engine.clientsCount}`);
-        
-        // If the LAST user has disconnected, stop the interval to save resources.
         if (io.engine.clientsCount === 0) {
             if (fetchInterval) {
                 clearInterval(fetchInterval);
-                fetchInterval = null; // Clear the reference
+                fetchInterval = null;
                 console.log("Last client disconnected. API fetch interval stopped.");
             }
         }
