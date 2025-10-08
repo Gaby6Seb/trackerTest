@@ -25,11 +25,9 @@
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
     </div>
-    <!-- CHANGE 1: Added the "minimized" class to start it closed -->
     <div id="not-located-container" class="minimized">
         <h2 id="not-located-header">
             Players Not on Map
-            <!-- CHANGE 2: Changed the default icon to "+" -->
             <span id="toggle-icon">+</span>
         </h2>
         <ul id="not-located-list">
@@ -39,7 +37,7 @@
   </div>
   
   <script>
-    // NO CHANGES TO JAVASCRIPT NEEDED
+    // --- START: NO CHANGES IN THIS SECTION ---
     const map = L.map('map').setView([33.04, -97.02], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -93,6 +91,47 @@
 
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
+    // --- END: NO CHANGES IN THIS SECTION ---
+
+    // --- CHANGE 1: ADD THE NEW `getDirections` FUNCTION ---
+    function getDirections(destLat, destLng) {
+      if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        return;
+      }
+
+      const success = (position) => {
+        const startLat = position.coords.latitude;
+        const startLng = position.coords.longitude;
+        // Construct the Google Maps URL for directions
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
+        // Open the URL in a new tab
+        window.open(url, '_blank');
+      };
+
+      const error = (err) => {
+        let message = "Could not get your location. ";
+        switch(err.code) {
+            case err.PERMISSION_DENIED:
+                message += "Please enable location permissions for this site.";
+                break;
+            case err.POSITION_UNAVAILABLE:
+                message += "Location information is unavailable.";
+                break;
+            case err.TIMEOUT:
+                message += "The request to get user location timed out.";
+                break;
+            default:
+                message += "An unknown error occurred.";
+                break;
+        }
+        alert(message);
+      };
+
+      // Request the user's current position
+      navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true });
+    }
+
 
     function filterMarkers(searchTerm, initialLoad = false) {
         markers.clearLayers(); 
@@ -112,7 +151,26 @@
                 let roleLabel = '';
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
-                const popupContent = `<div class="popup-header" style="background-color:${teamColor || '#3388ff'};">${firstName} ${lastName || ''} ${roleLabel}</div><div class="popup-body"><strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br><strong>Speed:</strong> ${speed.toFixed(1)} mph<br><strong>Battery:</strong> ${batteryStatus}<br><strong>Accuracy:</strong> ${accuracy.toFixed(1)} m</div><div class="popup-footer">Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}</div>`;
+                
+                // --- CHANGE 2: MODIFY THE `popupContent` TO INCLUDE THE BUTTON ---
+                const popupContent = `
+                  <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
+                    ${firstName} ${lastName || ''} ${roleLabel}
+                  </div>
+                  <div class="popup-body">
+                    <strong>Team:</strong> ${teamName || 'N/A'}<br>
+                    <strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br>
+                    <strong>Speed:</strong> ${speed.toFixed(1)} mph<br>
+                    <strong>Battery:</strong> ${batteryStatus}<br>
+                    <strong>Accuracy:</strong> ${accuracy.toFixed(1)} m
+                  </div>
+                  <div class="popup-actions">
+                    <button class="popup-directions-btn" onclick="getDirections(${lat}, ${lng})">Get Directions</button>
+                  </div>
+                  <div class="popup-footer">
+                    Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}
+                  </div>`;
+                
                 const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role);
                 if (currentMarkers[u]) {
                   currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
@@ -122,6 +180,7 @@
                 markers.addLayer(currentMarkers[u]);
             }
         });
+        // --- START: NO CHANGES IN THIS SECTION ---
         if (lowerCaseSearchTerm) {
             if (foundPlayerCoords.length > 0) {
                 if (foundPlayerCoords.length === 1) { map.setView(foundPlayerCoords[0], 16); } 
@@ -144,6 +203,7 @@
         if (notLocatedContainer.classList.contains('minimized')) { toggleIcon.textContent = '+'; } 
         else { toggleIcon.textContent = '-'; }
     });
+    // --- END: NO CHANGES IN THIS SECTION ---
   </script>
 </body>
 </html>
