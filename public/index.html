@@ -195,6 +195,50 @@
         if (notLocatedContainer.classList.contains('minimized')) { toggleIcon.textContent = '+'; } 
         else { toggleIcon.textContent = '-'; }
     });
+    // in index.html, inside the <script> tag
+
+function getDirections(buttonElement) {
+    const destLat = buttonElement.dataset.lat;
+    const destLng = buttonElement.dataset.lng;
+    console.log("Get Directions button clicked. Destination:", destLat, destLng);
+
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        return;
+    }
+
+    const success = (position) => {
+        const startLat = position.coords.latitude;
+        const startLng = position.coords.longitude;
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
+        
+        // CHANGE 1: Navigate the current tab. This is not blocked by pop-up blockers.
+        window.location.href = url;
+    };
+
+    const error = (err) => {
+        let message = "Could not get your location.";
+        switch(err.code) {
+            case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
+            case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
+            case err.TIMEOUT: message += " The request to get your location timed out."; break;
+        }
+        
+        // Combine the alert and confirm into a single confirm dialog.
+        // This gives it a slightly better chance of working if you must use window.open,
+        // but the window.location.href below is the most reliable method.
+        if (confirm(message + "\n\nWould you like to open Google Maps with just the destination set?")) {
+            const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+            
+            // CHANGE 2: Also navigate the current tab for the fallback.
+            window.location.href = fallbackUrl;
+        }
+    };
+
+    const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+    navigator.geolocation.getCurrentPosition(success, error, options);
+}
   </script>
 </body>
 </html>
+
