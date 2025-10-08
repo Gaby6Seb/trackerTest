@@ -204,6 +204,58 @@
         else { toggleIcon.textContent = '-'; }
     });
     // --- END: NO CHANGES IN THIS SECTION ---
+	
+	// in index.html, inside the <script> tag
+
+function getDirections(destLat, destLng) {
+    console.log("Get Directions button clicked. Destination:", destLat, destLng);
+
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        console.error("Geolocation API not supported.");
+        return;
+    }
+
+    const success = (position) => {
+        console.log("Location success!", position.coords);
+        const startLat = position.coords.latitude;
+        const startLng = position.coords.longitude;
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
+        console.log("Opening URL:", url);
+        window.open(url, '_blank');
+    };
+
+    const error = (err) => {
+        console.error("Geolocation error:", err);
+        let message = `Could not get your location. [Code: ${err.code}, Msg: ${err.message}]`;
+        
+        // Let's provide more user-friendly messages
+        switch(err.code) {
+            case err.PERMISSION_DENIED:
+                message = "Could not get your location. Please enable location permissions for this site in your phone's settings.";
+                break;
+            case err.POSITION_UNAVAILABLE:
+                message = "Location information is unavailable. Please check your network connection and GPS signal.";
+                break;
+            case err.TIMEOUT:
+                message = "The request to get your location timed out. Please try again in an area with a better signal.";
+                break;
+            default:
+                message = "An unknown error occurred while trying to get your location.";
+                break;
+        }
+        alert(message);
+    };
+
+    const options = {
+        enableHighAccuracy: true,
+        timeout: 10000, // Stop trying after 10 seconds
+        maximumAge: 0   // Don't use a cached position
+    };
+
+    console.log("Requesting user's current position with a 10-second timeout...");
+    navigator.geolocation.getCurrentPosition(success, error, options);
+}
   </script>
 </body>
 </html>
