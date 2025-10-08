@@ -25,11 +25,12 @@
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
     </div>
-    <div id="not-located-container">
-        <!-- The H2 is now the clickable header -->
+    <!-- CHANGE 1: Added the "minimized" class to start it closed -->
+    <div id="not-located-container" class="minimized">
         <h2 id="not-located-header">
             Players Not on Map
-            <span id="toggle-icon">-</span>
+            <!-- CHANGE 2: Changed the default icon to "+" -->
+            <span id="toggle-icon">+</span>
         </h2>
         <ul id="not-located-list">
             <!-- Players with null/invalid location will be listed here -->
@@ -38,6 +39,7 @@
   </div>
   
   <script>
+    // NO CHANGES TO JAVASCRIPT NEEDED
     const map = L.map('map').setView([33.04, -97.02], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -54,28 +56,16 @@
     const socket = io();
     let currentMarkers = {}; 
     let allPlayerLocations = []; 
-    let initialMapLoad = true; // Flag to control initial fitBounds
+    let initialMapLoad = true;
 
     const createAvatarIcon = (color, avatarUrl, role) => {
       const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
       const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
-      
       let pinStyles = `background-color: ${color || '#3388ff'};`;
-      if (!avatarUrl) { 
-          pinStyles += `border-color: ${color || '#3388ff'};`;
-      }
-      
-      const markerHtml = `
-        <div class="marker-container ${role}-marker">
-          <div class="${baseClass}" style="${pinStyles}">
-            ${avatarImage}
-          </div>
-          <div class="marker-pulse-effect ${role}-pulse"></div>
-        </div>
-      `;
+      if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
+      const markerHtml = `<div class="marker-container ${role}-marker"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div><div class="marker-pulse-effect ${role}-pulse"></div></div>`;
       const iconSize = avatarUrl ? [40, 52] : [30, 42];
       const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
-      
       return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
     };
     
@@ -84,9 +74,7 @@
     socket.on('locationUpdate', (data) => {
       allPlayerLocations = data.located;
       const notLocatedPlayers = data.notLocated;
-
       document.querySelector('.subtitle').textContent = `Tracking ${allPlayerLocations.length} players live.`; 
-      
       const notLocatedList = document.getElementById('not-located-list');
       notLocatedList.innerHTML = ''; 
       if (notLocatedPlayers.length > 0) {
@@ -99,60 +87,33 @@
       } else {
         document.getElementById('not-located-container').style.display = 'none';
       }
-
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
       if (initialMapLoad) initialMapLoad = false;
     });
 
     const playerSearchInput = document.getElementById('player-search');
-    playerSearchInput.addEventListener('input', (e) => {
-        filterMarkers(e.target.value, false);
-    });
+    playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
 
     function filterMarkers(searchTerm, initialLoad = false) {
         markers.clearLayers(); 
-
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const foundPlayerCoords = []; 
         const updatedUids = new Set(); 
-
         allPlayerLocations.forEach(user => { 
             const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, heading } = user;
-
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
-
             const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
-
             if (isMatch) {
                 updatedUids.add(u);
                 foundPlayerCoords.push(L.latLng(lat, lng));
-
                 const batteryIcon = isCharging ? '⚡' : '🔋';
                 const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
-                
                 let roleLabel = '';
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
-
-                const popupContent = `
-                    <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
-                      ${firstName} ${lastName || ''} ${roleLabel}
-                    </div>
-                    <div class="popup-body">
-                      <strong>Team:</strong> ${teamName || 'N/A'}<br>
-                      <strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br>
-                      <strong>Speed:</strong> ${speed.toFixed(1)} mph<br>
-                      <strong>Battery:</strong> ${batteryStatus}<br>
-                      <strong>Accuracy:</strong> ${accuracy.toFixed(1)} m
-                    </div>
-                    <div class="popup-footer">
-                      Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}
-                    </div>
-                  `;
-
+                const popupContent = `<div class="popup-header" style="background-color:${teamColor || '#3388ff'};">${firstName} ${lastName || ''} ${roleLabel}</div><div class="popup-body"><strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br><strong>Speed:</strong> ${speed.toFixed(1)} mph<br><strong>Battery:</strong> ${batteryStatus}<br><strong>Accuracy:</strong> ${accuracy.toFixed(1)} m</div><div class="popup-footer">Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}</div>`;
                 const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role);
-
                 if (currentMarkers[u]) {
                   currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
                 } else {
@@ -161,49 +122,28 @@
                 markers.addLayer(currentMarkers[u]);
             }
         });
-
         if (lowerCaseSearchTerm) {
             if (foundPlayerCoords.length > 0) {
-                if (foundPlayerCoords.length === 1) {
-                    map.setView(foundPlayerCoords[0], 16);
-                } else {
-                    const bounds = L.latLngBounds(foundPlayerCoords);
-                    map.fitBounds(bounds, { padding: [50, 50] });
-                }
+                if (foundPlayerCoords.length === 1) { map.setView(foundPlayerCoords[0], 16); } 
+                else { const bounds = L.latLngBounds(foundPlayerCoords); map.fitBounds(bounds, { padding: [50, 50] }); }
             }
         } else if (initialLoad && allPlayerLocations.length > 0) {
             const allCoords = allPlayerLocations.map(p => L.latLng(p.lat, p.lng));
-            if (allCoords.length > 0) { 
-                const allBounds = L.latLngBounds(allCoords);
-                map.fitBounds(allBounds, { padding: [50, 50] });
-            }
+            if (allCoords.length > 0) { const allBounds = L.latLngBounds(allCoords); map.fitBounds(allBounds, { padding: [50, 50] }); }
         }
-
-        for (const uid in currentMarkers) {
-            if (!updatedUids.has(uid)) {
-                delete currentMarkers[uid];
-            }
-        }
+        for (const uid in currentMarkers) { if (!updatedUids.has(uid)) { delete currentMarkers[uid]; } }
     }
     
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
 
-    // --- NEW: Logic for minimizable "Not on Map" section ---
     const notLocatedHeader = document.getElementById('not-located-header');
     const notLocatedContainer = document.getElementById('not-located-container');
     const toggleIcon = document.getElementById('toggle-icon');
-
     notLocatedHeader.addEventListener('click', () => {
         notLocatedContainer.classList.toggle('minimized');
-        
-        // Update the icon based on the minimized state
-        if (notLocatedContainer.classList.contains('minimized')) {
-            toggleIcon.textContent = '+';
-        } else {
-            toggleIcon.textContent = '-';
-        }
+        if (notLocatedContainer.classList.contains('minimized')) { toggleIcon.textContent = '+'; } 
+        else { toggleIcon.textContent = '-'; }
     });
-
   </script>
 </body>
 </html>
