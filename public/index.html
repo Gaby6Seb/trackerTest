@@ -14,13 +14,12 @@
 </head>
 <body>
 
+  <!-- (No changes to the body HTML) -->
   <div class="header">
     <h1>Splashin' Live Dashboard</h1>
     <p class="subtitle">Real-Time Player Locations</p>
   </div>
-
   <div id="map"></div>
-
   <div id="controls-container">
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
@@ -30,32 +29,22 @@
             Players Not on Map
             <span id="toggle-icon">+</span>
         </h2>
-        <ul id="not-located-list">
-            <!-- Players with null/invalid location will be listed here -->
-        </ul>
+        <ul id="not-located-list"></ul>
     </div>
   </div>
   
   <script>
-    // --- START: NO CHANGES IN THIS SECTION ---
+    // --- (No changes to the initial setup code) ---
     const map = L.map('map').setView([33.04, -97.02], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
-
-    const markers = L.markerClusterGroup({
-        maxClusterRadius: 60, 
-        disableClusteringAtZoom: 14, 
-        chunkedLoading: true, 
-        spiderfyOnMaxZoom: true 
-    });
-    map.addLayer(markers); 
-
+    const markers = L.markerClusterGroup({ maxClusterRadius: 60, disableClusteringAtZoom: 14, chunkedLoading: true, spiderfyOnMaxZoom: true });
+    map.addLayer(markers);
     const socket = io();
-    let currentMarkers = {}; 
-    let allPlayerLocations = []; 
+    let currentMarkers = {};
+    let allPlayerLocations = [];
     let initialMapLoad = true;
-
     const createAvatarIcon = (color, avatarUrl, role) => {
       const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
       const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
@@ -66,9 +55,7 @@
       const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
       return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
     };
-    
     socket.on('connect', () => document.querySelector('.subtitle').textContent = 'Connected. Waiting for location data...');
-
     socket.on('locationUpdate', (data) => {
       allPlayerLocations = data.located;
       const notLocatedPlayers = data.notLocated;
@@ -88,48 +75,48 @@
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
       if (initialMapLoad) initialMapLoad = false;
     });
-
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
-    // --- END: NO CHANGES IN THIS SECTION ---
 
-    // --- CHANGE 1: ADD THE NEW `getDirections` FUNCTION ---
-    function getDirections(destLat, destLng) {
-      if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser.");
-        return;
-      }
+    // --- CHANGE 1: UPDATE THE `getDirections` FUNCTION ---
+    // It now accepts the button element itself and reads data attributes.
+    // It also includes a helpful fallback if geolocation fails.
+    function getDirections(buttonElement) {
+        const destLat = buttonElement.dataset.lat;
+        const destLng = buttonElement.dataset.lng;
+        console.log("Get Directions button clicked. Destination:", destLat, destLng);
 
-      const success = (position) => {
-        const startLat = position.coords.latitude;
-        const startLng = position.coords.longitude;
-        // Construct the Google Maps URL for directions
-        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-        // Open the URL in a new tab
-        window.open(url, '_blank');
-      };
-
-      const error = (err) => {
-        let message = "Could not get your location. ";
-        switch(err.code) {
-            case err.PERMISSION_DENIED:
-                message += "Please enable location permissions for this site.";
-                break;
-            case err.POSITION_UNAVAILABLE:
-                message += "Location information is unavailable.";
-                break;
-            case err.TIMEOUT:
-                message += "The request to get user location timed out.";
-                break;
-            default:
-                message += "An unknown error occurred.";
-                break;
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
         }
-        alert(message);
-      };
 
-      // Request the user's current position
-      navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true });
+        const success = (position) => {
+            const startLat = position.coords.latitude;
+            const startLng = position.coords.longitude;
+            // This universal HTTPS link works for both app and web
+            const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
+            window.open(url, '_blank');
+        };
+
+        const error = (err) => {
+            let message = "Could not get your location.";
+            switch(err.code) {
+                case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
+                case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
+                case err.TIMEOUT: message += " The request to get your location timed out."; break;
+            }
+            alert(message);
+            
+            // BONUS: Offer a fallback link with only the destination
+            if (confirm("Would you like to open Google Maps with just the destination set?")) {
+                const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+                window.open(fallbackUrl, '_blank');
+            }
+        };
+
+        const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+        navigator.geolocation.getCurrentPosition(success, error, options);
     }
 
 
@@ -152,7 +139,8 @@
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
                 
-                // --- CHANGE 2: MODIFY THE `popupContent` TO INCLUDE THE BUTTON ---
+                // --- CHANGE 2: MODIFY POPUP BUTTON TO USE DATA ATTRIBUTES ---
+                // This is robust and handles negative coordinates correctly.
                 const popupContent = `
                   <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
                     ${firstName} ${lastName || ''} ${roleLabel}
@@ -165,7 +153,12 @@
                     <strong>Accuracy:</strong> ${accuracy.toFixed(1)} m
                   </div>
                   <div class="popup-actions">
-                    <button class="popup-directions-btn" onclick="getDirections(${lat}, ${lng})">Get Directions</button>
+                    <button class="popup-directions-btn" 
+                            data-lat="${lat}" 
+                            data-lng="${lng}" 
+                            onclick="getDirections(this)">
+                      Get Directions
+                    </button>
                   </div>
                   <div class="popup-footer">
                     Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}
@@ -180,7 +173,6 @@
                 markers.addLayer(currentMarkers[u]);
             }
         });
-        // --- START: NO CHANGES IN THIS SECTION ---
         if (lowerCaseSearchTerm) {
             if (foundPlayerCoords.length > 0) {
                 if (foundPlayerCoords.length === 1) { map.setView(foundPlayerCoords[0], 16); } 
@@ -193,8 +185,8 @@
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) { delete currentMarkers[uid]; } }
     }
     
+    // --- (No changes to the disconnect or toggle logic) ---
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
-
     const notLocatedHeader = document.getElementById('not-located-header');
     const notLocatedContainer = document.getElementById('not-located-container');
     const toggleIcon = document.getElementById('toggle-icon');
@@ -203,59 +195,6 @@
         if (notLocatedContainer.classList.contains('minimized')) { toggleIcon.textContent = '+'; } 
         else { toggleIcon.textContent = '-'; }
     });
-    // --- END: NO CHANGES IN THIS SECTION ---
-	
-	// in index.html, inside the <script> tag
-
-function getDirections(destLat, destLng) {
-    console.log("Get Directions button clicked. Destination:", destLat, destLng);
-
-    if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser.");
-        console.error("Geolocation API not supported.");
-        return;
-    }
-
-    const success = (position) => {
-        console.log("Location success!", position.coords);
-        const startLat = position.coords.latitude;
-        const startLng = position.coords.longitude;
-        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-        console.log("Opening URL:", url);
-        window.open(url, '_blank');
-    };
-
-    const error = (err) => {
-        console.error("Geolocation error:", err);
-        let message = `Could not get your location. [Code: ${err.code}, Msg: ${err.message}]`;
-        
-        // Let's provide more user-friendly messages
-        switch(err.code) {
-            case err.PERMISSION_DENIED:
-                message = "Could not get your location. Please enable location permissions for this site in your phone's settings.";
-                break;
-            case err.POSITION_UNAVAILABLE:
-                message = "Location information is unavailable. Please check your network connection and GPS signal.";
-                break;
-            case err.TIMEOUT:
-                message = "The request to get your location timed out. Please try again in an area with a better signal.";
-                break;
-            default:
-                message = "An unknown error occurred while trying to get your location.";
-                break;
-        }
-        alert(message);
-    };
-
-    const options = {
-        enableHighAccuracy: true,
-        timeout: 10000, // Stop trying after 10 seconds
-        maximumAge: 0   // Don't use a cached position
-    };
-
-    console.log("Requesting user's current position with a 10-second timeout...");
-    navigator.geolocation.getCurrentPosition(success, error, options);
-}
   </script>
 </body>
 </html>
