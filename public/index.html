@@ -22,6 +22,13 @@
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
     </div>
+    <!-- NEW TOGGLE SWITCH -->
+    <div id="filter-toggles">
+      <label for="show-all-toggle">
+        <input type="checkbox" id="show-all-toggle">
+        Show All Players
+      </label>
+    </div>
     <div id="not-located-container" class="minimized">
         <h2 id="not-located-header">
             Players Not on Map
@@ -49,6 +56,7 @@
     const socket = io();
     let currentMarkers = {}; 
     let allPlayerLocations = []; 
+    let showAllPlayers = false; // NEW: State for our toggle, default is false
     let initialMapLoad = true;
 
     const createAvatarIcon = (color, avatarUrl, role) => {
@@ -65,9 +73,12 @@
     socket.on('connect', () => document.querySelector('.subtitle').textContent = 'Connected. Waiting for location data...');
 
     socket.on('locationUpdate', (data) => {
-      allPlayerLocations = data.located;
+      // Filter the incoming data based on the toggle state BEFORE updating the subtitle
+      const filteredLocated = data.located.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target');
+      document.querySelector('.subtitle').textContent = `Tracking ${filteredLocated.length} players live.`; 
+
+      allPlayerLocations = data.located; // Store ALL data so toggle works without new server fetch
       const notLocatedPlayers = data.notLocated;
-      document.querySelector('.subtitle').textContent = `Tracking ${allPlayerLocations.length} players live.`; 
       const notLocatedList = document.getElementById('not-located-list');
       notLocatedList.innerHTML = ''; 
       if (notLocatedPlayers.length > 0) {
@@ -87,18 +98,18 @@
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
 
-    // --- FIXED: SIMPLIFIED AND MORE RELIABLE getDirections FUNCTION ---
+    // --- NEW: EVENT LISTENER FOR THE TOGGLE ---
+    const showAllToggle = document.getElementById('show-all-toggle');
+    showAllToggle.addEventListener('change', (e) => {
+        showAllPlayers = e.target.checked;
+        // Re-run the filter with the new toggle state
+        filterMarkers(document.getElementById('player-search').value, false);
+    });
+
     function getDirections(buttonElement) {
         const destLat = buttonElement.dataset.lat;
         const destLng = buttonElement.dataset.lng;
-
-        // This universal URL works on desktop and mobile. 
-        // On mobile, it will prompt to open the native Google Maps app.
-        // It automatically uses the user's current location as the starting point.
         const url = `https://maps.google.com/?daddr=${destLat},${destLng}`;
-        
-        // Open the URL in a new tab. This is a direct result of a user click,
-        // so it's not blocked by pop-up blockers.
         window.open(url, '_blank');
     }
 
@@ -107,11 +118,20 @@
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const foundPlayerCoords = []; 
         const updatedUids = new Set(); 
+        
         allPlayerLocations.forEach(user => { 
             const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, heading } = user;
+
+            // --- NEW: ADDED ROLE-BASED FILTERING LOGIC ---
+            const shouldDisplayByRole = showAllPlayers || role === 'teammate' || role === 'target';
+            if (!shouldDisplayByRole) {
+                return; // Skip this player if they don't match the role filter
+            }
+
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
             const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
+            
             if (isMatch) {
                 updatedUids.add(u);
                 foundPlayerCoords.push(L.latLng(lat, lng));
@@ -121,7 +141,6 @@
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
                 
-                // --- CHANGED: Simplified the onclick call ---
                 const popupContent = `
                   <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
                     ${firstName} ${lastName || ''} ${roleLabel}
@@ -154,13 +173,19 @@
                 markers.addLayer(currentMarkers[u]);
             }
         });
+
+        // --- UPDATED: Also update the subtitle count when filtering ---
+        document.querySelector('.subtitle').textContent = `Tracking ${markers.getLayers().length} players live.`;
+
         if (lowerCaseSearchTerm) {
             if (foundPlayerCoords.length > 0) {
                 if (foundPlayerCoords.length === 1) { map.setView(foundPlayerCoords[0], 16); } 
                 else { const bounds = L.latLngBounds(foundPlayerCoords); map.fitBounds(bounds, { padding: [50, 50] }); }
             }
         } else if (initialLoad && allPlayerLocations.length > 0) {
-            const allCoords = allPlayerLocations.map(p => L.latLng(p.lat, p.lng));
+            const allCoords = allPlayerLocations
+                .filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target') // Filter for initial view
+                .map(p => L.latLng(p.lat, p.lng));
             if (allCoords.length > 0) { const allBounds = L.latLngBounds(allCoords); map.fitBounds(allBounds, { padding: [50, 50] }); }
         }
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) { delete currentMarkers[uid]; } }
