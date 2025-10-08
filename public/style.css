@@ -1,143 +1,5 @@
-/* Basic Layout & Typography */
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  margin: 0;
-  color: #333;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-#map {
-  flex-grow: 1;
-  height: 100%;
-  z-index: 1;
-}
+/* ... all existing styles above this line ... */
 
-/* Header Styles */
-.header {
-  background: linear-gradient(45deg, #007bff, #00bfff);
-  color: white;
-  padding: 10px 20px;
-  text-align: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  z-index: 10;
-}
-.header h1 { margin: 0; font-size: 1.8em; }
-.header .subtitle { margin: 5px 0 0; font-weight: 300; }
-
-/* Controls Panel - Desktop Layout */
-#controls-container {
-  position: absolute;
-  top: 100px;
-  right: 15px;
-  z-index: 1000;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  max-width: 320px;
-  width: 90vw;
-  max-height: calc(100vh - 120px);
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-#player-search {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  font-size: 1em;
-  box-sizing: border-box;
-}
-#not-located-container {
-  overflow: hidden;
-  flex-shrink: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Styles for Minimizable Section */
-#not-located-header {
-  cursor: pointer;
-  user-select: none;
-  margin: 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ddd;
-  font-size: 1.1em;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-#toggle-icon {
-  font-weight: bold;
-  font-size: 1.4em;
-  line-height: 1;
-  color: #888;
-}
-#not-located-list {
-  list-style: none;
-  padding: 0;
-  margin: 10px 0 0;
-  overflow-y: auto;
-  transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, margin 0.3s;
-  max-height: 400px;
-  opacity: 1;
-}
-#not-located-container.minimized #not-located-list {
-  max-height: 0;
-  opacity: 0;
-  margin: 0;
-}
-
-/* Custom Marker and Popup Styles */
-.marker-pin {
-  width: 30px; height: 30px; border-radius: 50% 50% 50% 0; background: #007bff;
-  position: absolute; transform: rotate(-45deg); left: 50%; top: 50%;
-  margin: -15px 0 0 -15px; border: 4px solid #fff;
-}
-.marker-pin:after {
-  content: ''; width: 14px; height: 14px; margin: 4px 0 0 4px;
-  background: #fff; position: absolute; border-radius: 50%;
-}
-.marker-pin-avatar {
-  width: 40px; height: 40px; border-radius: 50%; border: 4px solid #fff;
-  box-shadow: 0 0 0 2px #333; background-size: cover; background-position: center;
-  position: relative; transform: translateY(-8px);
-}
-.marker-avatar-image { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.marker-container { position: relative; }
-.marker-pulse-effect {
-  border-radius: 50%; height: 40px; width: 40px; position: absolute;
-  top: -8px; left: 0; animation: pulsate 2s ease-out infinite;
-  opacity: 0; box-shadow: 0 0 1px 2px #fff;
-}
-.target-pulse { border: 3px solid rgba(255, 0, 0, 0.9); }
-.teammate-pulse { border: 3px solid rgba(0, 255, 0, 0.9); }
-@keyframes pulsate {
-  0% { transform: scale(0.9); opacity: 0.0; }
-  50% { opacity: 1.0; }
-  100% { transform: scale(1.4); opacity: 0.0; }
-}
-
-.leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-.leaflet-popup-content { margin: 0 !important; width: 250px !important; font-size: 14px; }
-.popup-header {
-  padding: 10px 15px; font-weight: bold; color: white;
-  border-top-left-radius: 8px; border-top-right-radius: 8px;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.popup-body { padding: 15px; line-height: 1.6; }
-.popup-footer {
-  padding: 8px 15px; font-size: 12px; color: #888; background-color: #f7f7f7;
-  border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; text-align: right;
-}
-.role-label {
-  font-size: 0.7em; padding: 2px 6px; border-radius: 10px;
-  color: white; font-weight: bold;
-}
-.role-label.target { background-color: #dc3545; }
 .role-label.teammate { background-color: #28a745; }
 
 /* --- NEW: CSS FOR THE DIRECTIONS BUTTON --- */
@@ -159,6 +21,32 @@ body {
 .popup-directions-btn:hover {
   background-color: #0056b3; /* Darker blue on hover */
 }
+
+/* --- NEW: CSS FOR FILTER TOGGLES --- */
+#filter-toggles {
+  display: flex;
+  align-items: center;
+  padding: 8px 4px;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+}
+
+#filter-toggles label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: #555;
+  width: 100%;
+  user-select: none; /* Prevents text selection on click */
+}
+
+#filter-toggles input[type="checkbox"] {
+  margin-right: 10px;
+  transform: scale(1.2); /* Make checkbox slightly larger */
+  accent-color: #007bff; /* Modern way to color checkboxes */
+}
+
 
 /* --- NEW: Mobile Layout Adjustments --- */
 @media (max-width: 767px) {
@@ -186,9 +74,12 @@ body {
 
   /* Reorder items within the panel for better mobile UX */
   #search-container {
-      order: 2; /* Search bar at the bottom */
+      order: 3; /* Search bar at the bottom */
   }
   #not-located-container {
       order: 1; /* Player list at the top */
+  }
+  #filter-toggles {
+      order: 2; /* Toggle in the middle */
   }
 }
