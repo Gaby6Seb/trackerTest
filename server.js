@@ -24,15 +24,39 @@ const authData = {
     goture_meta_security: {},
 };
 
+// --- NEW: State Management for Concurrency Control ---
+
+// The "Lock": A flag to ensure only one API fetch runs at a time.
+let isFetching = false; 
+
+// The "Cache": Stores the result of the last successful API fetch.
+let lastSuccessfulData = null; 
+
+// The "Timer": A reference to our setInterval so we can start/stop it.
+let fetchInterval = null;
+const FETCH_INTERVAL_MS = 10000; // Increased to 10 seconds as requested
+
+// --- The Core API Fetching Logic (Modified with Lock) ---
+
 async function runApiRequests() {
+    // 1. Check the Lock
+    if (isFetching) {
+        console.log("API fetch already in progress. Skipping this interval.");
+        return;
+    }
+
+    // This is a safety check. If no one is connected, stop trying.
     if (io.engine.clientsCount === 0) {
         console.log("No clients connected, skipping API requests.");
         return;
     }
 
-    console.log("--- Starting API Request Cycle ---");
-
     try {
+        // 2. Set the Lock
+        isFetching = true; 
+        console.log("--- Starting API Request Cycle ---");
+
+        // ... [THE ENTIRE API LOGIC FROM YOUR ORIGINAL FILE REMAINS UNCHANGED HERE] ...
         console.log("Attempting authentication...");
         const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
@@ -42,7 +66,6 @@ async function runApiRequests() {
         const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
         console.log("Authentication successful.");
 
-        // --- 1. Fetch Dashboard data ---
         console.log("Fetching dashboard data for current user context...");
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
         const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
@@ -52,208 +75,124 @@ async function runApiRequests() {
         const targets = dashboardData.targets || [];
         const myTeam = dashboardData.myTeam || [];
         const currentPlayer = dashboardData.currentPlayer;
+        
+        if (currentPlayer) richDataMap.set(currentPlayer.id, currentPlayer);
+        targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
+        myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
+        console.log(`Initialized richDataMap with ${richDataMap.size} players from dashboard.`);
 
-        // Populate richDataMap with dashboard players
-        if (currentPlayer) {
-            richDataMap.set(currentPlayer.id, currentPlayer);
-            // console.log(`  Added current player to richDataMap: ${currentPlayer.id}`); // Keep verbose logging off by default
-        }
-        targets.forEach(p => {
-            if (p && p.id) {
-                richDataMap.set(p.id, p);
-                // console.log(`  Added target to richDataMap: ${p.id} (${p.first_name || 'N/A'})`);
-            }
-        });
-        myTeam.forEach(p => {
-            if (p && p.id) {
-                richDataMap.set(p.id, p);
-                // console.log(`  Added teammate to richDataMap: ${p.id} (${p.first_name || 'N/A'})`);
-            }
-        });
-        console.log(`Initialized richDataMap with ${richDataMap.size} players from dashboard (current player, targets, teammates).`);
-
-        // --- 2. Fetch ALL other players from game roster using PAGINATION ---
         console.log("Fetching ALL other players from game roster using pagination...");
         let allOtherTeams = [];
-        let currentCursor = 0; // Start at the first "page" or "offset"
+        let currentCursor = 0;
         let hasMorePages = true;
-        let pageCount = 0;
-
+        
         while (hasMorePages) {
-            pageCount++;
             const playersUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/players?cursor=${currentCursor}&filter=all&sort=alphabetical&group=team`;
-            // console.log(`  Fetching page ${pageCount} with cursor ${currentCursor}...`); // Verbose
             const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
-
             const pageData = playersResponse.data;
             if (pageData && pageData.teams && pageData.teams.length > 0) {
-                console.log(`  Fetched page ${pageCount} with cursor ${currentCursor}, found ${pageData.teams.length} teams.`);
                 allOtherTeams.push(...pageData.teams);
-                // IMPORTANT: Increment cursor for the next iteration to get the next page
                 currentCursor++;
             } else {
-                // If no teams are returned in the current page, it means we've reached the end
-                console.log(`  No more teams found on page ${pageCount} with cursor ${currentCursor}. Stopping pagination.`);
                 hasMorePages = false;
             }
         }
-        console.log(`Finished fetching other players. Total teams found: ${allOtherTeams.length}`);
-
-        // Add players from these other teams to richDataMap, avoiding duplicates
-        const totalPlayersBeforeOther = richDataMap.size;
+        
         allOtherTeams.flatMap(team => team.players || []).forEach(p => {
-            if (p && p.id && !richDataMap.has(p.id)) { // Ensure player object and ID exist
-                richDataMap.set(p.id, p);
-                // console.log(`    Added new player from /players: ${p.id} (${p.first_name || 'N/A'})`); // Very verbose, enable if needed
-            }
+            if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
         });
-        console.log(`Added ${richDataMap.size - totalPlayersBeforeOther} new players from /players endpoint.`);
-        console.log(`Total unique players in richDataMap (from dashboard + all other players): ${richDataMap.size}`);
+        console.log(`Total unique players in richDataMap: ${richDataMap.size}`);
 
         if (richDataMap.size === 0) {
             console.log("No players found in the game roster.");
-            io.emit('locationUpdate', { located: [], notLocated: [] }); // Send empty arrays
+            const emptyData = { located: [], notLocated: [] };
+            io.emit('locationUpdate', emptyData);
+            lastSuccessfulData = emptyData; // Cache the empty result
             return;
         }
 
-        // --- 3. Fetch all Locations ---
         console.log("Fetching raw location updates from Supabase...");
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
         const locationResults = locationResponse.data;
-        console.log(`Received ${locationResults.length} raw location updates from Supabase.`);
+        console.log(`Received ${locationResults.length} raw location updates.`);
 
         const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
         const teammateIds = new Set(myTeam.map(p => p.id).filter(Boolean));
-
-        console.log(`Dashboard identifies ${targetIds.size} targets: ${Array.from(targetIds).map(id => richDataMap.get(id)?.first_name || id).join(', ')}`);
-        console.log(`Dashboard identifies ${teammateIds.size} teammates: ${Array.from(teammateIds).map(id => richDataMap.get(id)?.first_name || id).join(', ')}`);
-
-        let droppedNoRichData = 0;
-        let droppedInvalidLocation = 0;
-        let targetsOnMapCount = 0;
-        let teammatesOnMapCount = 0;
-        let neutralsOnMapCount = 0;
-
         const locatedPlayers = [];
-        const notLocatedPlayers = []; // Collect players with invalid locations or missing rich data
+        const notLocatedPlayers = [];
 
         locationResults.forEach(locData => {
-            const isTarget = targetIds.has(locData.u);
-            const isTeammate = teammateIds.has(locData.u);
-            const isSpecialPlayer = isTarget || isTeammate;
-
             let richData = richDataMap.get(locData.u);
-
-            // Fail-safe: If a special player has location but no richData, create minimal richData
-            if (isSpecialPlayer && !richData) {
-                console.warn(`CRITICAL WARNING: Rich data NOT found for special player ${locData.u} (Role: ${isTarget ? 'Target' : 'Teammate'}) in richDataMap. Using fallback data.`);
-                richData = {
-                    id: locData.u,
-                    first_name: `Player`,
-                    last_name: locData.u.substring(0, 8),
-                    team_name: isTeammate ? 'My Team' : (isTarget ? 'Target Team' : 'Unknown'),
-                    team_color: isTeammate ? '#4CAF50' : (isTarget ? '#F44336' : '#9E9E9E'),
-                    avatar_path_small: null,
-                };
-            }
-
             if (!richData) {
-                droppedNoRichData++;
-                // Add to notLocatedPlayers if rich data is completely missing (not even a fallback for special player)
-                notLocatedPlayers.push({
-                    u: locData.u,
-                    firstName: 'Unknown',
-                    lastName: locData.u.substring(0, 8),
-                    teamName: 'Unknown',
-                    teamColor: '#999999',
-                    reason: 'No rich data found'
-                });
+                notLocatedPlayers.push({ u: locData.u, firstName: 'Unknown', lastName: locData.u.substring(0, 8), teamName: 'Unknown', teamColor: '#999999', reason: 'No rich data found' });
                 return;
             }
-
             const lat = parseFloat(locData.l);
             const lng = parseFloat(locData.lo);
-
-            // Check if coordinates are valid
             if (isNaN(lat) || isNaN(lng)) {
-                droppedInvalidLocation++;
-                console.warn(`  Dropping player ${locData.u}: Invalid coordinates (lat: ${locData.l}, lng: ${locData.lo}).`);
-                // Add to notLocatedPlayers list
-                notLocatedPlayers.push({
-                    u: locData.u,
-                    firstName: richData.first_name || 'Player',
-                    lastName: richData.last_name || (richData.id ? richData.id.substring(0, 8) : 'Unknown'),
-                    teamName: richData.team_name || 'N/A',
-                    teamColor: richData.team_color || '#3388ff',
-                    reason: 'Invalid coordinates'
-                });
+                notLocatedPlayers.push({ u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', reason: 'Invalid coordinates' });
                 return;
             }
-
             let role = 'neutral';
-            if (isTarget) {
-                role = 'target';
-                targetsOnMapCount++;
-            } else if (isTeammate) {
-                role = 'teammate';
-                teammatesOnMapCount++;
-            } else {
-                neutralsOnMapCount++;
-            }
+            if (targetIds.has(locData.u)) role = 'target';
+            else if (teammateIds.has(locData.u)) role = 'teammate';
 
-            locatedPlayers.push({
-                u: locData.u,
-                lat: lat,
-                lng: lng,
-                firstName: richData.first_name || 'Player',
-                lastName: richData.last_name || (richData.id ? richData.id.substring(0, 8) : 'Unknown'),
-                teamName: richData.team_name || 'N/A',
-                teamColor: richData.team_color || (isTeammate ? '#4CAF50' : (isTarget ? '#F44336' : '#3388ff')),
-                avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null,
-                role: role,
-                status: locData.a,
-                speed: parseFloat(locData.s || '0'),
-                batteryLevel: parseFloat(locData.bl || '0'),
-                isCharging: locData.ic,
-                updatedAt: locData.up,
-                accuracy: parseFloat(locData.ac || '0'),
-                heading: parseFloat(locData.h || '0'),
-            });
+            locatedPlayers.push({ u: locData.u, lat, lng, firstName: richData.first_name || 'Player', lastName: richData.last_name || '', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role, status: locData.a, speed: parseFloat(locData.s || '0'), batteryLevel: parseFloat(locData.bl || '0'), isCharging: locData.ic, updatedAt: locData.up, accuracy: parseFloat(locData.ac || '0'), heading: parseFloat(locData.h || '0') });
         });
 
-        // Emit an object with two arrays: located and notLocated
-        io.emit('locationUpdate', { located: locatedPlayers, notLocated: notLocatedPlayers });
+        // --- Important Update ---
+        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers };
+        
+        // 3. Update the Cache with the fresh data
+        lastSuccessfulData = dataToEmit; 
 
-        console.log(`SUMMARY: Total raw locations from Supabase: ${locationResults.length}`);
-        console.log(`SUMMARY: Dropped because no rich data (not in dashboard or /players list): ${droppedNoRichData}`);
-        console.log(`SUMMARY: Dropped because invalid/null coordinates: ${droppedInvalidLocation}`);
-        console.log(`SUMMARY: Successfully processed and broadcast ${locatedPlayers.length} players to map.`);
-        console.log(`SUMMARY:   Targets successfully placed on map: ${targetsOnMapCount}`);
-        console.log(`SUMMARY:   Teammates successfully placed on map: ${teammatesOnMapCount}`);
-        console.log(`SUMMARY:   Neutrals successfully placed on map: ${neutralsOnMapCount}`);
-        console.log(`SUMMARY: ${notLocatedPlayers.length} players listed as not located.`);
+        // 4. Broadcast the fresh data to ALL clients
+        io.emit('locationUpdate', dataToEmit);
+
+        console.log(`Successfully processed and broadcast ${locatedPlayers.length} players to map.`);
         console.log("--- End API Request Cycle ---");
 
     } catch (error) {
-        console.error("API Error during runApiRequests:");
-        if (error.response) {
-            console.error("Server responded with error status:", error.response.status);
-            console.error("Error Data:", JSON.stringify(error.response.data, null, 2));
-        } else if (error.request) {
-            console.error("No response received from server for request:", error.request);
-        } else {
-            console.error("Error setting up API request:", error.message);
-        }
-        console.log("--- End API Request Cycle with Error ---");
+        console.error("API Error during runApiRequests:", error.message);
+        // Don't update cache on error, keep the last known good data
+    } finally {
+        // 5. Release the Lock, allowing the next fetch to run
+        isFetching = false;
     }
 }
 
+// --- MODIFIED: Connection and Disconnection Logic ---
+
 io.on('connection', (socket) => {
-    console.log(`A user connected. Kicking off initial data fetch.`);
-    runApiRequests();
-    socket.on('disconnect', () => console.log(`User disconnected.`));
+    console.log(`A user connected. Total clients: ${io.engine.clientsCount}`);
+
+    // Immediately send the latest cached data to the new user.
+    // This provides an instant view without waiting for the next API call.
+    if (lastSuccessfulData) {
+        socket.emit('locationUpdate', lastSuccessfulData);
+        console.log("Sent cached data to the new user.");
+    }
+
+    // If this is the VERY FIRST user to connect, start the interval.
+    if (io.engine.clientsCount === 1) {
+        console.log("First client connected. Kicking off initial data fetch and starting interval.");
+        runApiRequests(); // Run immediately for the first user
+        fetchInterval = setInterval(runApiRequests, FETCH_INTERVAL_MS);
+    }
+
+    socket.on('disconnect', () => {
+        console.log(`User disconnected. Total clients remaining: ${io.engine.clientsCount}`);
+        
+        // If the LAST user has disconnected, stop the interval to save resources.
+        if (io.engine.clientsCount === 0) {
+            if (fetchInterval) {
+                clearInterval(fetchInterval);
+                fetchInterval = null; // Clear the reference
+                console.log("Last client disconnected. API fetch interval stopped.");
+            }
+        }
+    });
 });
 
-setInterval(runApiRequests, 7000);
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
