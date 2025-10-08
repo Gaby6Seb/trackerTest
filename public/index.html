@@ -91,14 +91,14 @@
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
 
-    function getDirections(buttonElement) {
+    // --- CHANGE 1: ACCEPT THE `event` OBJECT ---
+    function getDirections(buttonElement, event) {
+        // --- CHANGE 2: STOP THE EVENT FROM BUBBLING UP TO THE MAP! ---
+        event.stopPropagation();
+
         const destLat = buttonElement.dataset.lat;
         const destLng = buttonElement.dataset.lng;
-        console.log("Get Directions button clicked. Destination:", destLat, destLng);
-
-        // --- NEW STRATEGY TO HANDLE POP-UP BLOCKERS ---
-        // 1. Open a new tab IMMEDIATELY as a direct result of the user's click.
-        //    This is allowed by pop-up blockers.
+        
         const newTab = window.open('', '_blank');
         if (newTab) {
             newTab.document.write('<h1>Finding your location...</h1><p>Please wait while we generate your directions. You may need to grant location permissions.</p>');
@@ -108,7 +108,7 @@
         }
 
         if (!navigator.geolocation) {
-            if (newTab) newTab.close(); // Clean up the tab if we fail early
+            if (newTab) newTab.close(); 
             alert("Geolocation is not supported by your browser.");
             return;
         }
@@ -117,38 +117,24 @@
             const startLat = position.coords.latitude;
             const startLng = position.coords.longitude;
             const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-
-            // 2. Now that we have the location, update the URL of the tab we already opened.
-            if (newTab) {
-                newTab.location.href = url;
-            }
+            if (newTab) newTab.location.href = url;
         };
 
         const error = (err) => {
-            // 3. If there's an error, show an error message in the new tab.
-            if (newTab) {
-                newTab.document.write('<h1>Location Error</h1><p>We could not get your location. Please check your browser and system settings.</p>');
-            }
+            if (newTab) newTab.document.write('<h1>Location Error</h1><p>We could not get your location. Please check your browser and system settings.</p>');
             
             let message = "Could not get your location.";
             switch(err.code) {
-                case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
-                case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
-                case err.TIMEOUT: message += " The request to get your location timed out."; break;
+                case err.PERMISSION_DENIED: message += " Please enable location permissions."; break;
+                case err.POSITION_UNAVAILABLE: message += " Location information is unavailable."; break;
+                case err.TIMEOUT: message += " The request timed out."; break;
             }
 
-            // Ask the user on the original page if they want to try the fallback.
             if (confirm(message + "\n\nWould you like to open Google Maps with just the destination set?")) {
                 const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-                // Update our new tab with the fallback URL.
-                if (newTab) {
-                    newTab.location.href = fallbackUrl;
-                }
+                if (newTab) newTab.location.href = fallbackUrl;
             } else {
-                // If the user says no, we can close the empty/error tab.
-                if (newTab) {
-                    newTab.close();
-                }
+                if (newTab) newTab.close();
             }
         };
 
@@ -175,7 +161,7 @@
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
                 
-                // The popup button uses data attributes and passes `this` to the function
+                // --- CHANGE 3: PASS THE `event` OBJECT FROM THE HTML ---
                 const popupContent = `
                   <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
                     ${firstName} ${lastName || ''} ${roleLabel}
@@ -191,7 +177,7 @@
                     <button class="popup-directions-btn" 
                             data-lat="${lat}" 
                             data-lng="${lng}" 
-                            onclick="getDirections(this)">
+                            onclick="getDirections(this, event)">
                       Get Directions
                     </button>
                   </div>
