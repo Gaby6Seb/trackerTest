@@ -78,46 +78,74 @@
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
 
-    // --- CHANGE 1: UPDATE THE `getDirections` FUNCTION ---
-    // It now accepts the button element itself and reads data attributes.
-    // It also includes a helpful fallback if geolocation fails.
-    function getDirections(buttonElement) {
-        const destLat = buttonElement.dataset.lat;
-        const destLng = buttonElement.dataset.lng;
-        console.log("Get Directions button clicked. Destination:", destLat, destLng);
+// in index.html, inside the <script> tag
 
-        if (!navigator.geolocation) {
-            alert("Geolocation is not supported by your browser.");
-            return;
+function getDirections(buttonElement) {
+    const destLat = buttonElement.dataset.lat;
+    const destLng = buttonElement.dataset.lng;
+    console.log("Get Directions button clicked. Destination:", destLat, destLng);
+
+    // --- NEW STRATEGY ---
+    // 1. Open a new tab IMMEDIATELY. This is a direct result of the user's click,
+    // so the pop-up blocker allows it.
+    const newTab = window.open('', '_blank');
+    if (newTab) {
+        newTab.document.write('<h1>Finding your location...</h1><p>Please wait, we are generating your directions.</p>');
+    } else {
+        alert('Please allow pop-ups for this site to get directions in a new tab.');
+        return;
+    }
+    // --- END NEW STRATEGY ---
+
+    if (!navigator.geolocation) {
+        if (newTab) newTab.close(); // Clean up the tab if we fail early
+        alert("Geolocation is not supported by your browser.");
+        return;
+    }
+
+    const success = (position) => {
+        const startLat = position.coords.latitude;
+        const startLng = position.coords.longitude;
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
+
+        // 2. Now that we have the location, update the URL of the tab we already opened.
+        if (newTab) {
+            newTab.location.href = url;
+        }
+    };
+
+    const error = (err) => {
+        // 3. If there's an error, we can either close the tab or show an error in it.
+        // Let's show an error and then offer the fallback.
+        if (newTab) {
+            newTab.document.write('<h1>Location Error</h1><p>We could not get your location.</p>');
+        }
+        
+        let message = "Could not get your location.";
+        switch(err.code) {
+            case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
+            case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
+            case err.TIMEOUT: message += " The request to get your location timed out."; break;
         }
 
-        const success = (position) => {
-            const startLat = position.coords.latitude;
-            const startLng = position.coords.longitude;
-            // This universal HTTPS link works for both app and web
-            const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-            window.open(url, '_blank');
-        };
-
-        const error = (err) => {
-            let message = "Could not get your location.";
-            switch(err.code) {
-                case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
-                case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
-                case err.TIMEOUT: message += " The request to get your location timed out."; break;
+        // We ask the user on the original page.
+        if (confirm(message + "\n\nWould you like to open Google Maps with just the destination set?")) {
+            const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+            // Update our new tab with the fallback URL.
+            if (newTab) {
+                newTab.location.href = fallbackUrl;
             }
-            alert(message);
-            
-            // BONUS: Offer a fallback link with only the destination
-            if (confirm("Would you like to open Google Maps with just the destination set?")) {
-                const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-                window.open(fallbackUrl, '_blank');
+        } else {
+            // If the user says no, we can close the empty/error tab.
+            if (newTab) {
+                newTab.close();
             }
-        };
+        }
+    };
 
-        const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-        navigator.geolocation.getCurrentPosition(success, error, options);
-    }
+    const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+    navigator.geolocation.getCurrentPosition(success, error, options);
+}
 
 
     function filterMarkers(searchTerm, initialLoad = false) {
@@ -196,49 +224,9 @@
         else { toggleIcon.textContent = '-'; }
     });
     // in index.html, inside the <script> tag
-
-function getDirections(buttonElement) {
-    const destLat = buttonElement.dataset.lat;
-    const destLng = buttonElement.dataset.lng;
-    console.log("Get Directions button clicked. Destination:", destLat, destLng);
-
-    if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser.");
-        return;
-    }
-
-    const success = (position) => {
-        const startLat = position.coords.latitude;
-        const startLng = position.coords.longitude;
-        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-        
-        // CHANGE 1: Navigate the current tab. This is not blocked by pop-up blockers.
-        window.location.href = url;
-    };
-
-    const error = (err) => {
-        let message = "Could not get your location.";
-        switch(err.code) {
-            case err.PERMISSION_DENIED: message += " Please enable location permissions for this site in your phone's settings."; break;
-            case err.POSITION_UNAVAILABLE: message += " Location information is unavailable. Check your network/GPS."; break;
-            case err.TIMEOUT: message += " The request to get your location timed out."; break;
-        }
-        
-        // Combine the alert and confirm into a single confirm dialog.
-        // This gives it a slightly better chance of working if you must use window.open,
-        // but the window.location.href below is the most reliable method.
-        if (confirm(message + "\n\nWould you like to open Google Maps with just the destination set?")) {
-            const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-            
-            // CHANGE 2: Also navigate the current tab for the fallback.
-            window.location.href = fallbackUrl;
-        }
-    };
-
-    const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-    navigator.geolocation.getCurrentPosition(success, error, options);
 }
   </script>
 </body>
 </html>
+
 
