@@ -26,7 +26,11 @@
         <input type="text" id="player-search" placeholder="Search by name or team...">
     </div>
     <div id="not-located-container">
-        <h2>Players Not on Map</h2>
+        <!-- The H2 is now the clickable header -->
+        <h2 id="not-located-header">
+            Players Not on Map
+            <span id="toggle-icon">-</span>
+        </h2>
         <ul id="not-located-list">
             <!-- Players with null/invalid location will be listed here -->
         </ul>
@@ -39,7 +43,6 @@
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
-    // Initialize Marker Cluster Group with LESS STRICT requirements
     const markers = L.markerClusterGroup({
         maxClusterRadius: 60, 
         disableClusteringAtZoom: 14, 
@@ -49,19 +52,16 @@
     map.addLayer(markers); 
 
     const socket = io();
-    let currentMarkers = {}; // Keep track of Leaflet marker objects
-    let allPlayerLocations = []; // Store all player data for search filtering
+    let currentMarkers = {}; 
+    let allPlayerLocations = []; 
     let initialMapLoad = true; // Flag to control initial fitBounds
 
-    // --- Dynamic Avatar Marker Creation with Role Highlighting ---
     const createAvatarIcon = (color, avatarUrl, role) => {
       const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
       const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
       
       let pinStyles = `background-color: ${color || '#3388ff'};`;
-      // For fallback pin, set border color to team color. Avatar markers keep a white border via CSS.
       if (!avatarUrl) { 
-          // The border color for the fallback pin is now correctly set here.
           pinStyles += `border-color: ${color || '#3388ff'};`;
       }
       
@@ -87,7 +87,6 @@
 
       document.querySelector('.subtitle').textContent = `Tracking ${allPlayerLocations.length} players live.`; 
       
-      // --- Update Players Not on Map List ---
       const notLocatedList = document.getElementById('not-located-list');
       notLocatedList.innerHTML = ''; 
       if (notLocatedPlayers.length > 0) {
@@ -101,15 +100,13 @@
         document.getElementById('not-located-container').style.display = 'none';
       }
 
-      // --- Apply current search filter or display all markers ---
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
-      if (initialMapLoad) initialMapLoad = false; // Turn off flag after first update
+      if (initialMapLoad) initialMapLoad = false;
     });
 
-    // --- Search Functionality ---
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => {
-        filterMarkers(e.target.value, false); // Don't fit all markers on new search term, only found ones
+        filterMarkers(e.target.value, false);
     });
 
     function filterMarkers(searchTerm, initialLoad = false) {
@@ -125,11 +122,7 @@
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
 
-            const isMatch = (
-                !lowerCaseSearchTerm || 
-                fullName.includes(lowerCaseSearchTerm) ||
-                fullTeamName.includes(lowerCaseSearchTerm)
-            );
+            const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
 
             if (isMatch) {
                 updatedUids.add(u);
@@ -169,8 +162,7 @@
             }
         });
 
-        // --- Adjust map view to found players ---
-        if (lowerCaseSearchTerm) { // Only adjust view if there's an active search
+        if (lowerCaseSearchTerm) {
             if (foundPlayerCoords.length > 0) {
                 if (foundPlayerCoords.length === 1) {
                     map.setView(foundPlayerCoords[0], 16);
@@ -178,20 +170,15 @@
                     const bounds = L.latLngBounds(foundPlayerCoords);
                     map.fitBounds(bounds, { padding: [50, 50] });
                 }
-            } else {
-                // No players found for active search term, map view remains unchanged from previous valid state.
-                console.log("No players found matching search term.");
             }
-        } else if (initialLoad && allPlayerLocations.length > 0) { // On initial load with no search, fit all
+        } else if (initialLoad && allPlayerLocations.length > 0) {
             const allCoords = allPlayerLocations.map(p => L.latLng(p.lat, p.lng));
-            if (allCoords.length > 0) { // Only fit if there are actual coordinates
+            if (allCoords.length > 0) { 
                 const allBounds = L.latLngBounds(allCoords);
                 map.fitBounds(allBounds, { padding: [50, 50] });
             }
         }
-        // If search is empty AND not initial load, map view is NOT touched, preserving user's zoom/pan.
 
-        // Clean up currentMarkers cache for removed players (optional but good for memory)
         for (const uid in currentMarkers) {
             if (!updatedUids.has(uid)) {
                 delete currentMarkers[uid];
@@ -200,6 +187,23 @@
     }
     
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
+
+    // --- NEW: Logic for minimizable "Not on Map" section ---
+    const notLocatedHeader = document.getElementById('not-located-header');
+    const notLocatedContainer = document.getElementById('not-located-container');
+    const toggleIcon = document.getElementById('toggle-icon');
+
+    notLocatedHeader.addEventListener('click', () => {
+        notLocatedContainer.classList.toggle('minimized');
+        
+        // Update the icon based on the minimized state
+        if (notLocatedContainer.classList.contains('minimized')) {
+            toggleIcon.textContent = '+';
+        } else {
+            toggleIcon.textContent = '-';
+        }
+    });
+
   </script>
 </body>
 </html>
