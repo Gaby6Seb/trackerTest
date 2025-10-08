@@ -13,14 +13,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
 </head>
 <body>
-
   <div class="header">
     <h1>Splashin' Live Dashboard</h1>
     <p class="subtitle">Real-Time Player Locations</p>
   </div>
-
   <div id="map"></div>
-
   <div id="controls-container">
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
@@ -35,7 +32,6 @@
         </ul>
     </div>
   </div>
-  
   <script>
     const map = L.map('map').setView([33.04, -97.02], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -91,55 +87,19 @@
     const playerSearchInput = document.getElementById('player-search');
     playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
 
-    // --- CHANGE 1: ACCEPT THE `event` OBJECT ---
-    function getDirections(buttonElement, event) {
-        // --- CHANGE 2: STOP THE EVENT FROM BUBBLING UP TO THE MAP! ---
-        event.stopPropagation();
-
+    // --- FIXED: SIMPLIFIED AND MORE RELIABLE getDirections FUNCTION ---
+    function getDirections(buttonElement) {
         const destLat = buttonElement.dataset.lat;
         const destLng = buttonElement.dataset.lng;
+
+        // This universal URL works on desktop and mobile. 
+        // On mobile, it will prompt to open the native Google Maps app.
+        // It automatically uses the user's current location as the starting point.
+        const url = `https://maps.google.com/?daddr=${destLat},${destLng}`;
         
-        const newTab = window.open('', '_blank');
-        if (newTab) {
-            newTab.document.write('<h1>Finding your location...</h1><p>Please wait while we generate your directions. You may need to grant location permissions.</p>');
-        } else {
-            alert('Please allow pop-ups for this site to get directions in a new tab.');
-            return;
-        }
-
-        if (!navigator.geolocation) {
-            if (newTab) newTab.close(); 
-            alert("Geolocation is not supported by your browser.");
-            return;
-        }
-
-        const success = (position) => {
-            const startLat = position.coords.latitude;
-            const startLng = position.coords.longitude;
-            const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${destLat},${destLng}`;
-            if (newTab) newTab.location.href = url;
-        };
-
-        const error = (err) => {
-            if (newTab) newTab.document.write('<h1>Location Error</h1><p>We could not get your location. Please check your browser and system settings.</p>');
-            
-            let message = "Could not get your location.";
-            switch(err.code) {
-                case err.PERMISSION_DENIED: message += " Please enable location permissions."; break;
-                case err.POSITION_UNAVAILABLE: message += " Location information is unavailable."; break;
-                case err.TIMEOUT: message += " The request timed out."; break;
-            }
-
-            if (confirm(message + "\n\nWould you like to open Google Maps with just the destination set?")) {
-                const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-                if (newTab) newTab.location.href = fallbackUrl;
-            } else {
-                if (newTab) newTab.close();
-            }
-        };
-
-        const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-        navigator.geolocation.getCurrentPosition(success, error, options);
+        // Open the URL in a new tab. This is a direct result of a user click,
+        // so it's not blocked by pop-up blockers.
+        window.open(url, '_blank');
     }
 
     function filterMarkers(searchTerm, initialLoad = false) {
@@ -161,7 +121,7 @@
                 if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                 else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
                 
-                // --- CHANGE 3: PASS THE `event` OBJECT FROM THE HTML ---
+                // --- CHANGED: Simplified the onclick call ---
                 const popupContent = `
                   <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
                     ${firstName} ${lastName || ''} ${roleLabel}
@@ -177,7 +137,7 @@
                     <button class="popup-directions-btn" 
                             data-lat="${lat}" 
                             data-lng="${lng}" 
-                            onclick="getDirections(this, event)">
+                            onclick="getDirections(this)">
                       Get Directions
                     </button>
                   </div>
