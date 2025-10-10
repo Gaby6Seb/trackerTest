@@ -49,10 +49,13 @@ async function runApiRequests() {
         isFetching = true;
         console.log("--- Starting API Request Cycle ---");
 
-        // ... (Steps 1, 2, 3 - Authentication and Roster Fetching - are unchanged)
         // 1. Authentication
         const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+
+        // Log the email being used for debugging, but NEVER log the password
+        console.log(`Attempting authentication for email: ${authData.email}`);
+
         const authResponse = await axios.post(authUrl, authData, { headers: authHeaders });
         const accessToken = authResponse.data.access_token;
         const bearerToken = `Bearer ${accessToken}`;
@@ -100,6 +103,7 @@ async function runApiRequests() {
         console.log(`Received ${locationResults.length} location records from Supabase.`);
 
         // 5. Process and categorize players
+        // ... (rest of the try block is the same as before) ...
         const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
         const teammateIds = new Set(myTeam.map(p => p.id).filter(Boolean));
 
@@ -128,9 +132,6 @@ async function runApiRequests() {
             const lng = parseFloat(locData.lo);
             const hasCoords = !isNaN(lat) && !isNaN(lng);
 
-            // --- REVISED LOGIC BLOCK ---
-
-            // 1. Always update our memory with the latest valid coordinates
             if (hasCoords) {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng });
             }
@@ -139,17 +140,15 @@ async function runApiRequests() {
             const isStealth = (locData.l === null && locData.a === null) && !isSafe;
 
             if (isSafe || isStealth) {
-                // For safe/stealth players, try to attach their last known location from memory.
                 const lastKnown = playerLastKnownLocationMap.get(locData.u);
                 const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
                 
                 if (isSafe) {
                     safeZonePanelList.push(playerWithLastKnownCoords);
-                } else { // isStealth
+                } else {
                     stealthedPlayers.push(playerWithLastKnownCoords);
                 }
             } else if (hasCoords) {
-                // This block is for actively located players who are NOT in safe/stealth.
                 let role = 'neutral';
                 if (targetIds.has(locData.u)) role = 'target';
                 else if (teammateIds.has(locData.u)) role = 'teammate';
@@ -165,10 +164,8 @@ async function runApiRequests() {
                     isSafeZone: false
                 });
             } else {
-                // This is the catch-all for players with no current OR historical location data.
                 notLocatedPlayers.push({ ...playerInfo, reason: 'No location data available' });
             }
-            // --- END REVISED LOGIC BLOCK ---
         });
         
         const dataToEmit = {
@@ -184,7 +181,22 @@ async function runApiRequests() {
         console.log("--- End API Request Cycle ---");
 
     } catch (error) {
+        // --- THIS IS THE IMPROVED CATCH BLOCK ---
         console.error("API Error during runApiRequests:", error.message);
+        if (error.response) {
+            // The request was made and the server responded with a status code
+            // that falls out of the range of 2xx
+            console.error("--- API Response Error Details ---");
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data, null, 2)); // This will often give the exact reason, e.g., "Invalid email"
+            console.error("Headers:", error.response.headers);
+        } else if (error.request) {
+            // The request was made but no response was received
+            console.error("API Error: No response received from server. Request details:", error.request);
+        } else {
+            // Something happened in setting up the request that triggered an Error
+            console.error('API Error: Error setting up the request:', error.message);
+        }
     } finally {
         isFetching = false;
     }
@@ -218,3 +230,4 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
+
