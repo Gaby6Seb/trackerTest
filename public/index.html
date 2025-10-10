@@ -183,8 +183,7 @@
         window.open(url, '_blank');
     }
 
-    // --- HEAVILY MODIFIED: Renders all player types on map ---
-    function filterMarkers(searchTerm, initialLoad = false) {
+function filterMarkers(searchTerm, initialLoad = false) {
         markers.clearLayers(); 
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const foundPlayerCoords = []; 
@@ -193,9 +192,16 @@
         allPlayersWithLocation.forEach(user => { 
             const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
             
-            // Filter by role (teammate/target)
-            const shouldDisplayByRole = showAllPlayers || role === 'teammate' || role === 'target' || statusType !== 'located';
-            if (!shouldDisplayByRole) return;
+            // --- MODIFICATION 3: Clarified filtering logic ---
+            // A player is shown if:
+            // 1. "Show All" is checked, OR
+            // 2. They are a teammate, OR
+            // 3. They are a target, OR
+            // 4. Their location is a "last known" pin (safe/stealth)
+            const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
+            const shouldDisplay = showAllPlayers || role === 'teammate' || role === 'target' || isLastKnown;
+            
+            if (!shouldDisplay) return;
 
             // Filter by search term
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
@@ -207,9 +213,10 @@
                 foundPlayerCoords.push(L.latLng(lat, lng));
                 
                 let popupContent;
-                const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
+                // isLastKnown is already defined above
 
                 if (isLastKnown) {
+                     // This will now correctly display the last known update time
                      popupContent = `
                         <div class="popup-header" style="background-color: ${teamColor || '#999'};">
                             <span>${firstName} ${lastName}</span>
@@ -271,7 +278,10 @@
             if (foundPlayerCoords.length > 1) map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50] });
             else if (foundPlayerCoords.length === 1) map.setView(foundPlayerCoords[0], 16);
         } else if (initialLoad && allPlayersWithLocation.length > 0) {
-            const initialCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng));
+            const initialCoords = allPlayersWithLocation.filter(p => {
+                 const isLastKnown = p.statusType === 'safeZone' || p.statusType === 'stealthed';
+                 return showAllPlayers || p.role === 'teammate' || p.role === 'target' || isLastKnown;
+            }).map(p => L.latLng(p.lat, p.lng));
             if (initialCoords.length > 0) map.fitBounds(L.latLngBounds(initialCoords), { padding: [50, 50] });
         }
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
