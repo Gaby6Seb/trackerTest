@@ -27,7 +27,7 @@ const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
 const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
 
 const authData = {
-    email: process.env.API_EMAI,
+    email: process.env.API_EMAIL,
     password: process.env.API_PASSWORD,
     goture_meta_security: {},
 };
@@ -230,4 +230,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
+
 
