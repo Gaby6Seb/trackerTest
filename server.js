@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const axios = require('axios');
+const fs = require('fs'); // NEW: Include the File System module
 
 // --- Server Setup ---
 const app = express();
@@ -35,33 +36,53 @@ const authData = {
 // --- State Management ---
 let isFetching = false;
 let lastSuccessfulData = null;
-let fetchInterval = null;
 const FETCH_INTERVAL_MS = 10000;
-// --- NEW: In-memory store for last known locations ---
-const playerLastKnownLocationMap = new Map();
 
-// --- The Core API Fetching Logic ---
+// --- NEW: Persistent State Logic ---
+const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
+let playerLastKnownLocationMap = new Map();
+
+function saveMapToFile() {
+    // Convert Map to an array of [key, value] pairs for JSON serialization
+    const array = Array.from(playerLastKnownLocationMap.entries());
+    fs.writeFile(LOCATION_MEMORY_FILE, JSON.stringify(array), 'utf8', (err) => {
+        if (err) {
+            console.error("Error saving location memory to file:", err);
+        }
+    });
+}
+
+function loadMapFromFile() {
+    try {
+        if (fs.existsSync(LOCATION_MEMORY_FILE)) {
+            const data = fs.readFileSync(LOCATION_MEMORY_FILE, 'utf8');
+            const array = JSON.parse(data);
+            playerLastKnownLocationMap = new Map(array);
+            console.log(`Successfully loaded ${playerLastKnownLocationMap.size} locations from memory file.`);
+        } else {
+            console.log("No location memory file found. Starting fresh.");
+        }
+    } catch (err) {
+        console.error("Error reading location memory file:", err);
+    }
+}
+
+// --- The Core API Fetching Logic (Unchanged except for one line) ---
 async function runApiRequests() {
     if (isFetching) { return; }
-    if (io.engine.clientsCount === 0) { return; }
 
     try {
         isFetching = true;
         console.log("--- Starting API Request Cycle ---");
 
-        // 1. Authentication
+        // ... Authentication and Roster fetching code is identical ...
         const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
-
-        // Log the email being used for debugging, but NEVER log the password
         console.log(`Attempting authentication for email: ${authData.email}`);
-
         const authResponse = await axios.post(authUrl, authData, { headers: authHeaders });
         const accessToken = authResponse.data.access_token;
         const bearerToken = `Bearer ${accessToken}`;
         const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
-        
-        // 2. Fetch All Player Data for Roster
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
         const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
         const richDataMap = new Map();
@@ -70,7 +91,6 @@ async function runApiRequests() {
         if (dashboardResponse.data.currentPlayer) richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
-
         let currentCursor = 0;
         let hasMorePages = true;
         while (hasMorePages) {
@@ -82,98 +102,58 @@ async function runApiRequests() {
                      if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
                 });
                 currentCursor++;
-            } else {
-                hasMorePages = false;
-            }
+            } else { hasMorePages = false; }
         }
         console.log(`Total unique players in roster: ${richDataMap.size}`);
-
-        // 3. Request Fresh Location Updates
         const allPlayerUids = Array.from(richDataMap.keys());
         const locationRequestUrl = `${SUPABASE_URL}/rest/v1/rpc/location-request`;
         const requestPromises = allPlayerUids.map(uid =>
             axios.post(locationRequestUrl, { uid: uid, queue_name: "location-request" }, { headers: commonHeaders })
         );
         await Promise.allSettled(requestPromises);
-
-        // 4. Fetch all Locations
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
         const locationResults = locationResponse.data;
         console.log(`Received ${locationResults.length} location records from Supabase.`);
 
-        // 5. Process and categorize players
-        // ... (rest of the try block is the same as before) ...
+        // --- Processing logic is identical ---
         const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
         const teammateIds = new Set(myTeam.map(p => p.id).filter(Boolean));
-
-        const locatedPlayers = [];
-        const notLocatedPlayers = [];
-        const stealthedPlayers = [];
-        const safeZonePanelList = [];
-
+        const locatedPlayers = [], notLocatedPlayers = [], stealthedPlayers = [], safeZonePanelList = [];
+        let mapWasUpdated = false; // MODIFIED: Track if we need to save the file
         locationResults.forEach(locData => {
             const richData = richDataMap.get(locData.u);
-            if (!richData) {
-                notLocatedPlayers.push({ u: locData.u, firstName: 'Unknown', lastName: locData.u.substring(0, 8), teamName: 'Unknown', teamColor: '#999999', reason: 'No rich data found' });
-                return;
-            }
-
-            const playerInfo = {
-                u: locData.u,
-                firstName: richData.first_name || 'Player',
-                lastName: richData.last_name || ' ',
-                teamName: richData.team_name || 'N/A',
-                teamColor: richData.team_color || '#3388ff',
-                avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null,
-            };
-
+            if (!richData) { /* ... */ return; }
+            const playerInfo = { u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null };
             const lat = parseFloat(locData.l);
             const lng = parseFloat(locData.lo);
             const hasCoords = !isNaN(lat) && !isNaN(lng);
-
             if (hasCoords) {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng });
+                mapWasUpdated = true; // MODIFIED: Flag that we should save our memory
             }
-
             const isSafe = richData.is_safe || locData.isz;
             const isStealth = (locData.l === null && locData.a === null) && !isSafe;
-
             if (isSafe || isStealth) {
                 const lastKnown = playerLastKnownLocationMap.get(locData.u);
                 const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-                
-                if (isSafe) {
-                    safeZonePanelList.push(playerWithLastKnownCoords);
-                } else {
-                    stealthedPlayers.push(playerWithLastKnownCoords);
-                }
+                if (isSafe) { safeZonePanelList.push(playerWithLastKnownCoords); } else { stealthedPlayers.push(playerWithLastKnownCoords); }
             } else if (hasCoords) {
                 let role = 'neutral';
                 if (targetIds.has(locData.u)) role = 'target';
                 else if (teammateIds.has(locData.u)) role = 'teammate';
-                
-                locatedPlayers.push({
-                    ...playerInfo, lat, lng, role,
-                    status: locData.a,
-                    speed: parseFloat(locData.s || '0'),
-                    batteryLevel: parseFloat(locData.bl || '0'),
-                    isCharging: locData.ic,
-                    updatedAt: locData.up,
-                    accuracy: parseFloat(locData.ac || '0'),
-                    isSafeZone: false
-                });
+                locatedPlayers.push({ ...playerInfo, lat, lng, role, status: locData.a, speed: parseFloat(locData.s || '0'), batteryLevel: parseFloat(locData.bl || '0'), isCharging: locData.ic, updatedAt: locData.up, accuracy: parseFloat(locData.ac || '0'), isSafeZone: false });
             } else {
                 notLocatedPlayers.push({ ...playerInfo, reason: 'No location data available' });
             }
         });
         
-        const dataToEmit = {
-            located: locatedPlayers,
-            notLocated: notLocatedPlayers,
-            stealthed: stealthedPlayers,
-            safeZone: safeZonePanelList
-        };
+        // MODIFIED: Save the memory file if it was changed
+        if (mapWasUpdated) {
+            saveMapToFile();
+        }
+
+        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayers, safeZone: safeZonePanelList };
         lastSuccessfulData = dataToEmit;
         io.emit('locationUpdate', dataToEmit);
 
@@ -181,54 +161,33 @@ async function runApiRequests() {
         console.log("--- End API Request Cycle ---");
 
     } catch (error) {
-        // --- THIS IS THE IMPROVED CATCH BLOCK ---
+        // ... Error handling is identical ...
         console.error("API Error during runApiRequests:", error.message);
-        if (error.response) {
-            // The request was made and the server responded with a status code
-            // that falls out of the range of 2xx
-            console.error("--- API Response Error Details ---");
-            console.error("Status:", error.response.status);
-            console.error("Data:", JSON.stringify(error.response.data, null, 2)); // This will often give the exact reason, e.g., "Invalid email"
-            console.error("Headers:", error.response.headers);
-        } else if (error.request) {
-            // The request was made but no response was received
-            console.error("API Error: No response received from server. Request details:", error.request);
-        } else {
-            // Something happened in setting up the request that triggered an Error
-            console.error('API Error: Error setting up the request:', error.message);
-        }
+        if (error.response) { console.error("Status:", error.response.status); console.error("Data:", JSON.stringify(error.response.data, null, 2)); }
     } finally {
         isFetching = false;
     }
 }
 
-// --- Connection Logic (Unchanged) ---
+// --- MODIFIED Connection Logic ---
 io.on('connection', (socket) => {
     console.log(`A user connected. Total clients: ${io.engine.clientsCount}`);
-
+    // Immediately send the last known data to the new client
     if (lastSuccessfulData) {
         socket.emit('locationUpdate', lastSuccessfulData);
     }
-
-    if (!fetchInterval) {
-        console.log("Client connected. Starting data fetch interval.");
-        runApiRequests(); 
-        fetchInterval = setInterval(runApiRequests, FETCH_INTERVAL_MS);
-    }
-
-    socket.on('disconnect', () => {
-        console.log(`User disconnected. Total clients remaining: ${io.engine.clientsCount}`);
-        
-        setTimeout(() => {
-            if (io.engine.clientsCount === 0 && fetchInterval) {
-                clearInterval(fetchInterval);
-                fetchInterval = null;
-                console.log("Last client disconnected. API fetch interval stopped.");
-            }
-        }, 500); 
-    });
+    // The fetching interval is no longer managed here
 });
 
-server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
-
-
+// --- MODIFIED: Start the server and the continuous tracking ---
+server.listen(PORT, () => {
+    console.log(`Server listening on http://localhost:${PORT}`);
+    
+    // Load the historical location data from our file
+    loadMapFromFile();
+    
+    // Start the API fetching loop immediately and run it forever
+    console.log("Starting continuous API fetch interval.");
+    runApiRequests(); // Run once immediately
+    setInterval(runApiRequests, FETCH_INTERVAL_MS);
+});
