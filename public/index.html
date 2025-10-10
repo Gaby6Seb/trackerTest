@@ -22,49 +22,65 @@
     <div id="search-container">
         <input type="text" id="player-search" placeholder="Search by name or team...">
     </div>
-    <!-- NEW TOGGLE SWITCH -->
     <div id="filter-toggles">
       <label for="show-all-toggle">
         <input type="checkbox" id="show-all-toggle">
         Show All Players
       </label>
     </div>
+    <div id="safezone-container" class="minimized">
+        <h2 id="safezone-header">
+            Players in Safe Zone
+            <span id="safezone-toggle-icon">+</span>
+        </h2>
+        <ul id="safezone-list"></ul>
+    </div>
+    <div id="stealth-container" class="minimized">
+        <h2 id="stealth-header">
+            Stealthed Players
+            <span id="stealth-toggle-icon">+</span>
+        </h2>
+        <ul id="stealth-list"></ul>
+    </div>
     <div id="not-located-container" class="minimized">
         <h2 id="not-located-header">
             Players Not on Map
             <span id="toggle-icon">+</span>
         </h2>
-        <ul id="not-located-list">
-            <!-- Players with null/invalid location will be listed here -->
-        </ul>
+        <ul id="not-located-list"></ul>
     </div>
   </div>
-  <script>
+
+<script>
     const map = L.map('map').setView([33.04, -97.02], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
     const markers = L.markerClusterGroup({
-        maxClusterRadius: 60, 
-        disableClusteringAtZoom: 14, 
-        chunkedLoading: true, 
-        spiderfyOnMaxZoom: true 
+        maxClusterRadius: 60, disableClusteringAtZoom: 14, 
+        chunkedLoading: true, spiderfyOnMaxZoom: true 
     });
     map.addLayer(markers); 
 
     const socket = io();
     let currentMarkers = {}; 
-    let allPlayerLocations = []; 
-    let showAllPlayers = false; // NEW: State for our toggle, default is false
+    let allPlayersWithLocation = []; // Renamed for clarity
+    let allPanelData = {};
+    let showAllPlayers = false;
     let initialMapLoad = true;
 
-    const createAvatarIcon = (color, avatarUrl, role) => {
+    // --- MODIFIED: Added isLastKnown parameter ---
+    const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown) => {
       const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
+      const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
+      const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
       const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
       let pinStyles = `background-color: ${color || '#3388ff'};`;
       if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
-      const markerHtml = `<div class="marker-container ${role}-marker"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div><div class="marker-pulse-effect ${role}-pulse"></div></div>`;
+      // --- MODIFIED: Only show pulse effect if NOT a last-known location ---
+      const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
+      const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
       const iconSize = avatarUrl ? [40, 52] : [30, 42];
       const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
       return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
@@ -73,98 +89,167 @@
     socket.on('connect', () => document.querySelector('.subtitle').textContent = 'Connected. Waiting for location data...');
 
     socket.on('locationUpdate', (data) => {
-      // Filter the incoming data based on the toggle state BEFORE updating the subtitle
-      const filteredLocated = data.located.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target');
-      document.querySelector('.subtitle').textContent = `Tracking ${filteredLocated.length} players live.`; 
+      // --- MODIFIED: Combine all players with coordinates for map rendering ---
+      allPlayersWithLocation = [
+          ...data.located.map(p => ({ ...p, statusType: 'located' })),
+          ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
+          ...data.stealthed.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'stealthed' })),
+      ];
+      allPanelData = data;
 
-      allPlayerLocations = data.located; // Store ALL data so toggle works without new server fetch
-      const notLocatedPlayers = data.notLocated;
-      const notLocatedList = document.getElementById('not-located-list');
-      notLocatedList.innerHTML = ''; 
-      if (notLocatedPlayers.length > 0) {
-        notLocatedPlayers.forEach(player => {
-          const listItem = document.createElement('li');
-          listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'}) - ${player.reason}`;
-          notLocatedList.appendChild(listItem);
-        });
-        document.getElementById('not-located-container').style.display = 'block';
-      } else {
-        document.getElementById('not-located-container').style.display = 'none';
-      }
+      const populateList = (containerId, listId, players, reasonKey) => {
+          const container = document.getElementById(containerId);
+          const list = document.getElementById(listId);
+          list.innerHTML = '';
+          if (players && players.length > 0) {
+              players.sort((a, b) => a.firstName.localeCompare(b.firstName)).forEach(player => {
+                  const listItem = document.createElement('li');
+                  listItem.dataset.uid = player.u;
+                  let details = reasonKey && player[reasonKey] ? ` - ${player[reasonKey]}` : '';
+
+                  // --- MODIFIED: Make list item clickable if it has coords ---
+                  if (player.lat && player.lng) {
+                      listItem.classList.add('clickable-list-item');
+                      listItem.onclick = () => panToLastLocation(player.lat, player.lng);
+                  }
+                  
+                  // --- MODIFIED: Removed time remaining ---
+                  listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}`;
+                  list.appendChild(listItem);
+              });
+              container.style.display = 'flex';
+          } else {
+              container.style.display = 'none';
+          }
+      };
+
+      populateList('safezone-container', 'safezone-list', data.safeZone);
+      populateList('stealth-container', 'stealth-list', data.stealthed);
+      populateList('not-located-container', 'not-located-list', data.notLocated, 'reason');
+
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
       if (initialMapLoad) initialMapLoad = false;
     });
 
-    const playerSearchInput = document.getElementById('player-search');
-    playerSearchInput.addEventListener('input', (e) => { filterMarkers(e.target.value, false); });
+    // --- NEW: Function to pan map to a location ---
+    function panToLastLocation(lat, lng) {
+        map.setView([lat, lng], 17); // Zoom in closer for last known locations
+    }
 
-    // --- NEW: EVENT LISTENER FOR THE TOGGLE ---
-    const showAllToggle = document.getElementById('show-all-toggle');
-    showAllToggle.addEventListener('change', (e) => {
+    function expandPanel(containerId) {
+        const container = document.getElementById(containerId);
+        if (container && container.classList.contains('minimized')) {
+            container.classList.remove('minimized');
+            const icon = container.querySelector('h2 span');
+            if (icon) icon.textContent = '-';
+        }
+    }
+
+    function findAndExpandList(searchTerm) {
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
+        const listsToSearch = [
+            { data: allPanelData.safeZone, containerId: 'safezone-container' },
+            { data: allPanelData.stealthed, containerId: 'stealth-container' },
+            { data: allPanelData.notLocated, containerId: 'not-located-container' }
+        ];
+        for (const listInfo of listsToSearch) {
+            if (listInfo.data) {
+                const foundPlayer = listInfo.data.find(p => 
+                    (`${p.firstName || ''} ${p.lastName || ''}`.toLowerCase().includes(lowerCaseSearchTerm)) ||
+                    ((p.teamName || '').toLowerCase().includes(lowerCaseSearchTerm))
+                );
+                if (foundPlayer) {
+                    expandPanel(listInfo.containerId);
+                    const listItem = document.querySelector(`li[data-uid="${foundPlayer.u}"]`);
+                    if(listItem) {
+                        listItem.classList.add('highlighted');
+                        listItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    document.getElementById('player-search').addEventListener('input', (e) => filterMarkers(e.target.value, false));
+    document.getElementById('show-all-toggle').addEventListener('change', (e) => {
         showAllPlayers = e.target.checked;
-        // Re-run the filter with the new toggle state
         filterMarkers(document.getElementById('player-search').value, false);
     });
 
     function getDirections(buttonElement) {
-        const destLat = buttonElement.dataset.lat;
-        const destLng = buttonElement.dataset.lng;
-        const url = `https://maps.google.com/?daddr=${destLat},${destLng}`;
+        const url = `https://maps.google.com/?daddr=${buttonElement.dataset.lat},${buttonElement.dataset.lng}`;
         window.open(url, '_blank');
     }
 
+    // --- HEAVILY MODIFIED: Renders all player types on map ---
     function filterMarkers(searchTerm, initialLoad = false) {
         markers.clearLayers(); 
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const foundPlayerCoords = []; 
         const updatedUids = new Set(); 
         
-        allPlayerLocations.forEach(user => { 
-            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, heading } = user;
+        allPlayersWithLocation.forEach(user => { 
+            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
+            
+            // Filter by role (teammate/target)
+            const shouldDisplayByRole = showAllPlayers || role === 'teammate' || role === 'target' || statusType !== 'located';
+            if (!shouldDisplayByRole) return;
 
-            // --- NEW: ADDED ROLE-BASED FILTERING LOGIC ---
-            const shouldDisplayByRole = showAllPlayers || role === 'teammate' || role === 'target';
-            if (!shouldDisplayByRole) {
-                return; // Skip this player if they don't match the role filter
-            }
-
+            // Filter by search term
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
             const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
-            
+
             if (isMatch) {
                 updatedUids.add(u);
                 foundPlayerCoords.push(L.latLng(lat, lng));
-                const batteryIcon = isCharging ? '⚡' : '🔋';
-                const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
-                let roleLabel = '';
-                if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
-                else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
                 
-                const popupContent = `
-                  <div class="popup-header" style="background-color:${teamColor || '#3388ff'};">
-                    ${firstName} ${lastName || ''} ${roleLabel}
-                  </div>
-                  <div class="popup-body">
-                    <strong>Team:</strong> ${teamName || 'N/A'}<br>
-                    <strong>Status:</strong> ${status ? status.replace(/_/g, ' ') : 'unknown'}<br>
-                    <strong>Speed:</strong> ${speed.toFixed(1)} mph<br>
-                    <strong>Battery:</strong> ${batteryStatus}<br>
-                    <strong>Accuracy:</strong> ${accuracy.toFixed(1)} m
-                  </div>
-                  <div class="popup-actions">
-                    <button class="popup-directions-btn" 
-                            data-lat="${lat}" 
-                            data-lng="${lng}" 
-                            onclick="getDirections(this)">
-                      Get Directions
-                    </button>
-                  </div>
-                  <div class="popup-footer">
-                    Updated: ${new Date(updatedAt).toLocaleTimeString('en-US')}
-                  </div>`;
-                
-                const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role);
+                let popupContent;
+                const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
+
+                if (isLastKnown) {
+                     popupContent = `
+                        <div class="popup-header" style="background-color: ${teamColor || '#999'};">
+                            <span>${firstName} ${lastName}</span>
+                        </div>
+                        <div class="popup-body">
+                            <strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br>
+                            <strong>Last Known Location</strong>
+                        </div>
+                         <div class="popup-footer">
+                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
+                        </div>
+                    `;
+                } else {
+                    const batteryIcon = isCharging ? '⚡' : '🔋';
+                    const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
+                    let roleLabel = '';
+                    if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
+                    else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
+                    popupContent = `
+                        <div class="popup-header" style="background-color: ${teamColor || '#3388ff'};">
+                            <span>${firstName} ${lastName}</span>
+                            ${roleLabel}
+                        </div>
+                        <div class="popup-body">
+                            <strong>Team:</strong> ${teamName || 'N/A'}<br>
+                            <strong>Speed:</strong> ${speed.toFixed(1)} m/s<br>
+                            <strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br>
+                            <strong>Battery:</strong> ${batteryStatus}<br>
+                        </div>
+                        <div class="popup-actions">
+                            <button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button>
+                        </div>
+                        <div class="popup-footer">
+                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
+                        </div>
+                    `;
+                }
+
+                const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown);
+
                 if (currentMarkers[u]) {
                   currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
                 } else {
@@ -174,33 +259,40 @@
             }
         });
 
-        // --- UPDATED: Also update the subtitle count when filtering ---
-        document.querySelector('.subtitle').textContent = `Tracking ${markers.getLayers().length} players live.`;
+        document.querySelector('.subtitle').textContent = `Tracking ${markers.getLayers().length} players on map.`;
 
-        if (lowerCaseSearchTerm) {
-            if (foundPlayerCoords.length > 0) {
-                if (foundPlayerCoords.length === 1) { map.setView(foundPlayerCoords[0], 16); } 
-                else { const bounds = L.latLngBounds(foundPlayerCoords); map.fitBounds(bounds, { padding: [50, 50] }); }
-            }
-        } else if (initialLoad && allPlayerLocations.length > 0) {
-            const allCoords = allPlayerLocations
-                .filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target') // Filter for initial view
-                .map(p => L.latLng(p.lat, p.lng));
-            if (allCoords.length > 0) { const allBounds = L.latLngBounds(allCoords); map.fitBounds(allBounds, { padding: [50, 50] }); }
+        if (markers.getLayers().length === 0 && lowerCaseSearchTerm) {
+            findAndExpandList(lowerCaseSearchTerm);
+        } else {
+            document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
         }
-        for (const uid in currentMarkers) { if (!updatedUids.has(uid)) { delete currentMarkers[uid]; } }
+
+        if (lowerCaseSearchTerm && foundPlayerCoords.length > 0) {
+            if (foundPlayerCoords.length > 1) map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50] });
+            else if (foundPlayerCoords.length === 1) map.setView(foundPlayerCoords[0], 16);
+        } else if (initialLoad && allPlayersWithLocation.length > 0) {
+            const initialCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng));
+            if (initialCoords.length > 0) map.fitBounds(L.latLngBounds(initialCoords), { padding: [50, 50] });
+        }
+        for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
     }
     
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
+    
+    const setupCollapsiblePanel = (headerId, containerId, iconId) => {
+        const header = document.getElementById(headerId);
+        const container = document.getElementById(containerId);
+        const icon = document.getElementById(iconId);
+        header.addEventListener('click', () => {
+            container.classList.toggle('minimized');
+            icon.textContent = container.classList.contains('minimized') ? '+' : '-';
+        });
+    };
 
-    const notLocatedHeader = document.getElementById('not-located-header');
-    const notLocatedContainer = document.getElementById('not-located-container');
-    const toggleIcon = document.getElementById('toggle-icon');
-    notLocatedHeader.addEventListener('click', () => {
-        notLocatedContainer.classList.toggle('minimized');
-        if (notLocatedContainer.classList.contains('minimized')) { toggleIcon.textContent = '+'; } 
-        else { toggleIcon.textContent = '-'; }
-    });
-  </script>
+    setupCollapsiblePanel('safezone-header', 'safezone-container', 'safezone-toggle-icon');
+    setupCollapsiblePanel('stealth-header', 'stealth-container', 'stealth-toggle-icon');
+    setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-icon');
+</script>
+
 </body>
 </html>
