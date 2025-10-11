@@ -4,9 +4,74 @@ const { Server } = require("socket.io");
 const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
+const crypto = require('crypto'); // <-- Add crypto for token generation
 
-// --- Server Setup (Unchanged) ---
+// --- Load Login Configurations ---
+const LOGINS_FILE = path.join(__dirname, 'logins.json');
+let loginConfigs = {};
+
+// Try to load from environment variable first (for Railway)
+if (process.env.LOGINS_JSON) {
+    try {
+        loginConfigs = JSON.parse(process.env.LOGINS_JSON);
+        console.log(`Loaded ${Object.keys(loginConfigs).length} login configurations from environment variable.`);
+    } catch (err) {
+        console.error("FATAL ERROR: Could not parse LOGINS_JSON environment variable.", err);
+        process.exit(1);
+    }
+} 
+// Fallback to local file (for local development)
+else {
+    try {
+        loginConfigs = JSON.parse(fs.readFileSync(LOGINS_FILE, 'utf8'));
+        console.log(`Loaded ${Object.keys(loginConfigs).length} login configurations from local logins.json file.`);
+    } catch (err) {
+        console.error("FATAL ERROR: Could not read logins.json file. Make sure it exists or LOGINS_JSON env var is set.", err);
+        process.exit(1);
+    }
+}
+
+// --- NEW: Persistent Token Management ---
+const TOKEN_FILE = path.join(__dirname, 'persistent_tokens.json');
+let persistentTokens = new Map(); // token -> { username, expiresAt }
+
+function saveTokensToFile() {
+    const array = Array.from(persistentTokens.entries());
+    fs.writeFile(TOKEN_FILE, JSON.stringify(array), 'utf8', (err) => {
+        if (err) console.error("Error saving persistent tokens:", err);
+    });
+}
+
+function loadTokensFromFile() {
+    try {
+        if (fs.existsSync(TOKEN_FILE)) {
+            const data = fs.readFileSync(TOKEN_FILE, 'utf8');
+            const array = JSON.parse(data);
+            persistentTokens = new Map(array);
+            // Prune expired tokens on load
+            const now = new Date();
+            let prunedCount = 0;
+            persistentTokens.forEach((value, key) => {
+                if (new Date(value.expiresAt) < now) {
+                    persistentTokens.delete(key);
+                    prunedCount++;
+                }
+            });
+            if (prunedCount > 0) {
+                console.log(`Pruned ${prunedCount} expired tokens.`);
+                saveTokensToFile();
+            }
+            console.log(`Loaded ${persistentTokens.size} persistent tokens.`);
+        }
+    } catch (err) {
+        console.error("Error reading persistent tokens file:", err);
+    }
+}
+
+
+// --- Server Setup ---
 const app = express();
+app.use(express.json());
 app.use((req, res, next) => {
     const proto = req.headers['x-forwarded-proto'];
     if (process.env.NODE_ENV === 'production' && proto !== 'https') {
@@ -18,31 +83,104 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
-app.use(express.static(path.join(__dirname, 'public')));
 
-// --- API Configuration (Unchanged) ---
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+
+// --- UPDATED: Login Endpoint ---
+app.post('/login', (req, res) => {
+    const { username, password, rememberMe } = req.body;
+    const userConfig = loginConfigs[username];
+
+    if (userConfig && userConfig.password === password) {
+        let token = null;
+        if (rememberMe) {
+            token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+            persistentTokens.set(token, { username, expiresAt });
+            saveTokensToFile();
+            console.log(`Generated new persistent token for user: ${username}`);
+        }
+
+        res.json({
+            token: token, // <-- Send token back
+            username: username,
+            isMaster: !!userConfig.isMaster,
+            displayName: userConfig.displayName,
+            canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
+            canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
+        });
+    } else {
+        res.status(401).json({ message: 'Invalid credentials' });
+    }
+});
+
+// --- NEW: Token Login Endpoint ---
+app.post('/token-login', (req, res) => {
+    const { token } = req.body;
+    if (!token) {
+        return res.status(400).json({ message: 'Token is required' });
+    }
+
+    const tokenData = persistentTokens.get(token);
+
+    if (tokenData && new Date(tokenData.expiresAt) > new Date()) {
+        const userConfig = loginConfigs[tokenData.username];
+        if (userConfig) {
+            console.log(`User ${tokenData.username} logged in via token.`);
+            res.json({
+                username: tokenData.username,
+                isMaster: !!userConfig.isMaster,
+                displayName: userConfig.displayName,
+                canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
+                canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
+            });
+        } else {
+            // User may have been deleted from logins.json
+            persistentTokens.delete(token);
+            saveTokensToFile();
+            res.status(401).json({ message: 'User no longer exists' });
+        }
+    } else {
+        if (tokenData) { // Token expired
+            persistentTokens.delete(token);
+            saveTokensToFile();
+        }
+        res.status(401).json({ message: 'Invalid or expired token' });
+    }
+});
+
+// --- NEW: Logout Endpoint ---
+app.post('/logout', (req, res) => {
+    const { token } = req.body;
+    if (token && persistentTokens.has(token)) {
+        persistentTokens.delete(token);
+        saveTokensToFile();
+        console.log(`Invalidated persistent token.`);
+    }
+    res.status(200).json({ message: 'Logged out successfully' });
+});
+
+// --- API Configuration ---
 const SUPABASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co";
 const SPLASHIN_API_URL = "https://splashin.app/api/v3";
 const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyc3B2c2Rmd2FxanR1aHltdWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODM1ODY0MjcsImV4cCI6MTk5OTE2MjQyN30.2AItrHcB7A5bSZ_dfd455kvLL8fXLL7IrfMBoFmkGww";
 const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
 const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
-
 const authData = {
-    email: process.env.API_EMAIL,
-    password: process.env.API_PASSWORD,
+    email: process.env.API_EMAIL || "gabrielpchicas@gmail.com",
+    password: process.env.API_PASSWORD || "Pennyfart12@",
     goture_meta_security: {},
 };
 
-// --- State Management (Unchanged part) ---
+// --- State Management ---
 let isFetching = false;
 let lastSuccessfulData = null;
 const FETCH_INTERVAL_MS = 10000;
 const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
 let playerLastKnownLocationMap = new Map();
-
-// --- NEW: State management for stealth timers ---
 const stealthExpirationMap = new Map();
-const STEALTH_REFETCH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+const STEALTH_REFETCH_INTERVAL_MS = 2 * 60 * 1000;
 
 function saveMapToFile() {
     const array = Array.from(playerLastKnownLocationMap.entries());
@@ -64,6 +202,99 @@ function loadMapFromFile() {
     }
 }
 
+
+// --- Data Filtering & Resolution Logic ---
+function filterDataForUser(fullData, userFilterConfig) {
+    // Master users see everything, no filtering needed.
+    if (userFilterConfig.isMaster) {
+        return fullData;
+    }
+
+    const myTeamId = userFilterConfig.myTeamId;
+    const targetTeamIds = userFilterConfig.targetTeamIds || new Set();
+    const allowedTeamIds = new Set([myTeamId, ...targetTeamIds]);
+    const shouldFilterByTeam = !userFilterConfig.canSeeAllPlayers;
+
+    const processPlayers = (players) => {
+        if (!players) return [];
+        let processed = players;
+
+        // Step 1: Filter by team visibility if the user doesn't have "see all" permission
+        if (shouldFilterByTeam) {
+            processed = processed.filter(p => allowedTeamIds.has(p.teamId));
+        }
+
+        // Step 2: Map roles (teammate, target, neutral) to all visible players
+        return processed.map(p => {
+            let role = 'neutral';
+            if (p.teamId === myTeamId) {
+                role = 'teammate';
+            } else if (targetTeamIds.has(p.teamId)) {
+                role = 'target';
+            }
+            return { ...p, role };
+        });
+    };
+
+    const result = {
+        located: processPlayers(fullData.located),
+        notLocated: processPlayers(fullData.notLocated),
+        stealthed: processPlayers(fullData.stealthed),
+        safeZone: processPlayers(fullData.safeZone),
+    };
+
+    // Step 3: If the user lacks permission, remove last known location from stealthed/safezone players
+    if (!userFilterConfig.canSeeLastKnownLocation) {
+        const stripCoords = (player) => {
+            const { lat, lng, ...rest } = player;
+            return rest;
+        };
+        result.stealthed = result.stealthed.map(stripCoords);
+        result.safeZone = result.safeZone.map(stripCoords);
+    }
+
+    return result;
+}
+
+
+async function resolveReferenceLogin(loginDetails) {
+    console.log(`Attempting to resolve team/target info for login: ${loginDetails.email}`);
+    try {
+        const authHeaders = { "Apikey": API_KEY };
+        const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+        const refAuthData = { ...loginDetails, goture_meta_security: {} };
+        const authResponse = await axios.post(authUrl, refAuthData, { headers: authHeaders });
+        const accessToken = authResponse.data.access_token;
+        const bearerToken = `Bearer ${accessToken}`;
+        const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken };
+
+        const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
+        const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
+
+        if (!dashboardResponse.data || !dashboardResponse.data.myTeam) {
+            throw new Error("Dashboard response did not contain team information.");
+        }
+
+        const myTeamId = dashboardResponse.data.myTeam.length > 0 ? dashboardResponse.data.myTeam[0].team_id : null;
+        if (!myTeamId) throw new Error("Could not determine team ID from dashboard.");
+        
+        const targetTeamIds = new Set();
+        if (dashboardResponse.data.targets) {
+            dashboardResponse.data.targets.forEach(target => {
+                if (target.team_id) targetTeamIds.add(target.team_id);
+            });
+        }
+        
+        console.log(`Successfully resolved login ${loginDetails.email}: Team ID ${myTeamId}, Targets ${[...targetTeamIds].join(', ')}`);
+        return { myTeamId, targetTeamIds };
+    } catch (error) {
+        console.error(`Failed to resolve reference login for ${loginDetails.email}:`, error.message);
+        if (error.response) console.error("API Response:", error.response.data);
+        return null;
+    }
+}
+
+
 // --- The Core API Fetching Logic ---
 async function runApiRequests() {
     if (isFetching) { return; }
@@ -72,7 +303,6 @@ async function runApiRequests() {
         isFetching = true;
         console.log("--- Starting API Request Cycle ---");
 
-        // 1. Authentication
         const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
         const authResponse = await axios.post(authUrl, authData, { headers: authHeaders });
@@ -80,7 +310,6 @@ async function runApiRequests() {
         const bearerToken = `Bearer ${accessToken}`;
         const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
         
-        // 2. Fetch All Player Data for Roster
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
         const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
         const richDataMap = new Map();
@@ -90,7 +319,6 @@ async function runApiRequests() {
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
 
-        // Roster fetching...
         let currentCursor = 0;
         let hasMorePages = true;
         while (hasMorePages) {
@@ -135,7 +363,7 @@ async function runApiRequests() {
             else if (teammateIds.has(locData.u)) role = 'teammate';
 
             const playerInfo = {
-                u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role: role
+                u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role: role, teamId: richData.team_id
             };
             
             const isSafe = richData.is_safe || locData.isz;
@@ -144,8 +372,11 @@ async function runApiRequests() {
             if (isSafe || isStealth) {
                 const lastKnown = playerLastKnownLocationMap.get(locData.u);
                 const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-                if (isSafe) { safeZonePanelList.push(playerWithLastKnownCoords); } 
-                else { stealthedPlayers.push(playerWithLastKnownCoords); }
+                if (isSafe) {
+                    safeZonePanelList.push({ ...playerWithLastKnownCoords, isSafeZone: true });
+                } else {
+                    stealthedPlayers.push({ ...playerWithLastKnownCoords, isSafeZone: false });
+                }
             } else if (hasCoords) {
                 locatedPlayers.push({
                     ...playerInfo, lat, lng,
@@ -158,49 +389,46 @@ async function runApiRequests() {
         
         if (mapWasUpdated) { saveMapToFile(); }
 
-        // --- NEW: LOGIC TO FETCH AND MANAGE STEALTH TIMERS ---
         const currentStealthedIds = new Set(stealthedPlayers.map(p => p.u));
-
-        // 1. Fetch new/stale stealth expiration times
         for (const player of stealthedPlayers) {
             const existingEntry = stealthExpirationMap.get(player.u);
             const shouldFetch = !existingEntry || (Date.now() - existingEntry.fetchedAt > STEALTH_REFETCH_INTERVAL_MS);
-
             if (shouldFetch) {
                 try {
                     console.log(`Fetching stealth expiration for ${player.firstName}...`);
                     const fullUserDataUrl = `${SUPABASE_URL}/rest/v1/rpc/get_map_user_full_v2`;
                     const response = await axios.post(fullUserDataUrl, { gid: GAME_ID, uid: player.u }, { headers: commonHeaders });
-                    if (response.data && response.data.ive) { // 'ive' is the stealth expiration field
+                    if (response.data && response.data.ive) {
                         stealthExpirationMap.set(player.u, { expiresAt: response.data.ive, fetchedAt: Date.now() });
                     }
-                    await new Promise(resolve => setTimeout(resolve, 250)); // Be nice to the API
+                    await new Promise(resolve => setTimeout(resolve, 250));
                 } catch (err) {
                     console.error(`Failed to fetch stealth data for ${player.u}:`, err.message);
                 }
             }
         }
-        
-        // 2. Clean up map: remove players who are no longer stealthed
         for (const uid of stealthExpirationMap.keys()) {
             if (!currentStealthedIds.has(uid)) {
                 stealthExpirationMap.delete(uid);
                 console.log(`Player ${uid} is no longer stealthed, removed from timer map.`);
             }
         }
-
-        // 3. Attach expiration times to the data being emitted
         const stealthedPlayersWithTimers = stealthedPlayers.map(player => {
             const expirationData = stealthExpirationMap.get(player.u);
             return { ...player, stealthExpiresAt: expirationData ? expirationData.expiresAt : null };
         });
-        // --- END OF NEW LOGIC ---
 
         const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayersWithTimers, safeZone: safeZonePanelList };
         lastSuccessfulData = dataToEmit;
-        io.emit('locationUpdate', dataToEmit);
+        
+        io.sockets.sockets.forEach(socket => {
+            if (socket.data.filterConfig) {
+                const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
+                socket.emit('locationUpdate', userData);
+            }
+        });
 
-        console.log(`Broadcast: ${locatedPlayers.length} located, ${safeZonePanelList.length} safe, ${stealthedPlayers.length} stealth, ${notLocatedPlayers.length} not located.`);
+        console.log(`Broadcasted filtered data to ${io.engine.clientsCount} clients.`);
         console.log("--- End API Request Cycle ---");
 
     } catch (error) {
@@ -211,16 +439,79 @@ async function runApiRequests() {
     }
 }
 
-// --- Connection and Server Start (Unchanged) ---
+
+// --- Connection and Server Start ---
 io.on('connection', (socket) => {
-    console.log(`A user connected. Total clients: ${io.engine.clientsCount}`);
-    if (lastSuccessfulData) {
-        socket.emit('locationUpdate', lastSuccessfulData);
-    }
+    console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
+
+    socket.on('authenticate', async (data) => {
+        const username = data.username;
+        const userConfig = loginConfigs[username];
+
+        if (userConfig) {
+            socket.data.username = username;
+            console.log(`Socket ${socket.id} authenticated as user: ${username}`);
+            
+            let filterConfig;
+
+            if (userConfig.isMaster) {
+                filterConfig = { 
+                    isMaster: true,
+                    canSeeAllPlayers: true,
+                    canSeeLastKnownLocation: true
+                };
+            } else if (userConfig.team_id || userConfig.reference_login) {
+                let resolvedIds = null;
+                if (userConfig.reference_login) {
+                    console.log(`[${username}] Using reference login to resolve team info...`);
+                    resolvedIds = await resolveReferenceLogin(userConfig.reference_login);
+                } else {
+                     console.log(`[${username}] Using direct ID configuration.`);
+                     resolvedIds = { myTeamId: userConfig.team_id, targetTeamIds: new Set(userConfig.target_team_ids || []) };
+                }
+
+                if (resolvedIds) {
+                    filterConfig = {
+                        isMaster: false,
+                        myTeamId: resolvedIds.myTeamId,
+                        targetTeamIds: resolvedIds.targetTeamIds,
+                        canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
+                        canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
+                    };
+                } else {
+                    console.error(`[${username}] Could not resolve team info. Disconnecting.`);
+                    socket.emit('auth_error', 'Could not resolve team info.');
+                    socket.disconnect();
+                    return;
+                }
+            } else {
+                 console.error(`[${username}] Login config is invalid. Disconnecting.`);
+                 socket.emit('auth_error', 'Server configuration for this user is invalid.');
+                 socket.disconnect();
+                 return;
+            }
+
+            socket.data.filterConfig = filterConfig;
+
+            if (lastSuccessfulData) {
+                const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
+                socket.emit('locationUpdate', userData);
+            }
+        } else {
+            console.log(`Socket ${socket.id} failed authentication for user: ${username}.`);
+            socket.disconnect();
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        console.log(`User ${socket.data.username || 'unauthenticated'} disconnected. Total clients: ${io.engine.clientsCount}`);
+    });
 });
+
 server.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     loadMapFromFile();
+    loadTokensFromFile(); // <-- Load tokens on start
     console.log("Starting continuous API fetch interval.");
     runApiRequests();
     setInterval(runApiRequests, FETCH_INTERVAL_MS);
