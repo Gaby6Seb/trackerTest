@@ -19,150 +19,76 @@ z-index: 1;
 background: linear-gradient(45deg, #007bff, #00bfff);
 color: white;
 padding: 10px 20px;
-text-align: center;
 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 z-index: 10;
-}
-.header h1 { margin: 0; font-size: 1.8em; }
-.header .subtitle { margin: 5px 0 0; font-weight: 300; }
-
-/* Controls Panel - Desktop Layout */
-#controls-container {
-position: absolute;
-top: 100px;
-right: 15px;
-z-index: 1000;
-background: rgba(255, 255, 255, 0.95);
-padding: 15px;
-border-radius: 8px;
-box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-max-width: 320px;
-width: 90vw;
-max-height: calc(100vh - 120px);
-display: flex;
-flex-direction: column;
-gap: 15px;
-}
-
-#player-search {
-width: 100%;
-padding: 10px;
-border: 1px solid #ccc;
-border-radius: 5px;
-font-size: 1em;
-box-sizing: border-box;
-}
-
-/* --- Generic styles for all collapsible containers --- */
-#not-located-container,
-#safezone-container,
-#stealth-container {
-overflow: hidden;
-flex-shrink: 1;
-min-height: 0;
-display: flex;
-flex-direction: column;
-border-top: 1px solid #eee;
-padding-top: 15px;
-}
-#controls-container > div:first-child {
-border-top: none;
-padding-top: 0;
-}
-
-#not-located-header,
-#safezone-header,
-#stealth-header {
-cursor: pointer;
-user-select: none;
-margin: 0;
-padding-bottom: 8px;
-font-size: 1.1em;
 display: flex;
 justify-content: space-between;
 align-items: center;
 }
+.header-content { text-align: left; }
+.header h1 { margin: 0; font-size: 1.8em; }
+.header .subtitle { margin: 5px 0 0; font-weight: 300; }
 
-#toggle-icon,
-#safezone-toggle-icon,
-#stealth-toggle-icon {
-font-weight: bold;
-font-size: 1.4em;
-line-height: 1;
-color: #888;
+.user-info { display: flex; align-items: center; gap: 15px; }
+#display-name { font-weight: bold; font-size: 0.9em; }
+#logout-btn {
+    background-color: #f8f9fa; color: #007bff; border: 1px solid #007bff;
+    padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold;
+    transition: all 0.2s ease-in-out;
+}
+#logout-btn:hover { background-color: #007bff; color: white; }
+
+
+/* Controls Panel - Desktop Layout */
+#controls-container {
+position: absolute; top: 100px; right: 15px; z-index: 1000;
+background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px;
+box-shadow: 0 4px 12px rgba(0,0,0,0.2); max-width: 320px; width: 90vw;
+max-height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 15px;
+}
+#player-search {
+width: 100%; padding: 10px; border: 1px solid #ccc;
+border-radius: 5px; font-size: 1em; box-sizing: border-box;
 }
 
-#not-located-list,
-#safezone-list,
-#stealth-list {
-list-style: none;
-padding: 0;
-margin: 0;
-overflow-y: auto;
+/* Collapsible containers */
+#not-located-container, #safezone-container, #stealth-container {
+overflow: hidden; flex-shrink: 1; min-height: 0; display: flex; flex-direction: column;
+border-top: 1px solid #eee; padding-top: 15px;
+}
+#controls-container > div:first-child { border-top: none; padding-top: 0; }
+#not-located-header, #safezone-header, #stealth-header {
+cursor: pointer; user-select: none; margin: 0; padding-bottom: 8px; font-size: 1.1em;
+display: flex; justify-content: space-between; align-items: center;
+}
+#toggle-icon, #safezone-toggle-icon, #stealth-toggle-icon {
+font-weight: bold; font-size: 1.4em; line-height: 1; color: #888;
+}
+#not-located-list, #safezone-list, #stealth-list {
+list-style: none; padding: 0; margin: 0; overflow-y: auto;
 transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
-max-height: 200px;
-opacity: 1;
+max-height: 200px; opacity: 1;
 }
-#not-located-list li,
-#safezone-list li,
-#stealth-list li {
-padding: 4px 8px; /* Added horizontal padding */
-font-size: 0.9em;
-border-radius: 4px; /* Added for hover effect */
+#not-located-list li, #safezone-list li, #stealth-list li {
+padding: 4px 8px; font-size: 0.9em; border-radius: 4px;
 }
-
 #not-located-container.minimized #not-located-list,
 #safezone-container.minimized #safezone-list,
 #stealth-container.minimized #stealth-list {
-max-height: 0;
-opacity: 0;
+max-height: 0; opacity: 0;
 }
+.clickable-list-item { cursor: pointer; transition: background-color 0.2s ease-in-out; }
+.clickable-list-item:hover { background-color: #e9ecef; }
+li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bold; transition: background-color 0.3s; }
 
-/* --- NEW: Style for clickable list items --- */
-.clickable-list-item {
-    cursor: pointer;
-    transition: background-color 0.2s ease-in-out;
+/* Marker Styles */
+.safezone-marker .marker-pin-avatar::after, .safezone-marker .marker-pin::after {
+content: '🛡️'; position: absolute; top: -8px; right: -8px; font-size: 16px;
+background: rgba(255, 255, 255, 0.8); border-radius: 50%; padding: 2px;
+line-height: 1; text-shadow: 0 0 2px #000;
 }
-.clickable-list-item:hover {
-    background-color: #e9ecef;
-}
-
-/* --- NEW: Style for the highlighted list item --- */
-li.highlighted {
-background-color: #e7f3ff;
-border-radius: 4px;
-font-weight: bold;
-transition: background-color 0.3s;
-}
-
-/* --- Marker style for Safe Zone players --- */
-.safezone-marker .marker-pin-avatar::after,
-.safezone-marker .marker-pin::after {
-content: '🛡️';
-position: absolute;
-top: -8px;
-right: -8px;
-font-size: 16px;
-background: rgba(255, 255, 255, 0.8);
-border-radius: 50%;
-padding: 2px;
-line-height: 1;
-text-shadow: 0 0 2px #000;
-}
-.safezone-marker .marker-pin::after {
-top: -20px;
-right: -20px;
-transform: rotate(45deg);
-}
-
-/* --- NEW: Faded marker for Last Known Locations --- */
-.last-known-marker .marker-pin,
-.last-known-marker .marker-pin-avatar {
-    opacity: 0.6;
-    filter: grayscale(80%);
-}
-
-/* Custom Marker and Popup Styles */
+.safezone-marker .marker-pin::after { top: -20px; right: -20px; transform: rotate(45deg); }
+.last-known-marker .marker-pin, .last-known-marker .marker-pin-avatar { opacity: 0.6; filter: grayscale(80%); }
 .marker-pin {
 width: 30px; height: 30px; border-radius: 50% 50% 50% 0; background: #007bff;
 position: absolute; transform: rotate(-45deg); left: 50%; top: 50%;
@@ -187,11 +113,12 @@ opacity: 0; box-shadow: 0 0 1px 2px #fff;
 50% { opacity: 1.0; }
 100% { transform: scale(1.4); opacity: 0.0; }
 }
+
+/* Popup Styles */
 .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
 .leaflet-popup-content { margin: 0 !important; width: auto !important; min-width: 250px !important; font-size: 14px; }
 .popup-header {
-padding: 10px 15px; font-weight: bold; color: white;
-border-top-left-radius: 8px; border-top-right-radius: 8px;
+padding: 10px 15px; font-weight: bold; color: white; border-top-left-radius: 8px; border-top-right-radius: 8px;
 display: flex; justify-content: space-between; align-items: center;
 }
 .popup-body { padding: 15px; line-height: 1.6; }
@@ -199,23 +126,18 @@ display: flex; justify-content: space-between; align-items: center;
 padding: 8px 15px; font-size: 12px; color: #888; background-color: #f7f7f7;
 border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; text-align: right;
 }
-.role-label {
-font-size: 0.7em; padding: 2px 6px; border-radius: 10px;
-color: white; font-weight: bold;
-}
+.role-label { font-size: 0.7em; padding: 2px 6px; border-radius: 10px; color: white; font-weight: bold; }
 .role-label.target { background-color: #dc3545; }
 .role-label.teammate { background-color: #28a745; }
-
-.popup-actions {
-padding: 0 15px 15px;
-}
+.popup-actions { padding: 0 15px 15px; }
 .popup-directions-btn {
 width: 100%; padding: 10px; font-size: 1em; font-weight: bold;
-color: white; background-color: #007bff; border: none;
-border-radius: 5px; cursor: pointer; transition: background-color 0.2s ease-in-out;
+color: white; background-color: #007bff; border: none; border-radius: 5px;
+cursor: pointer; transition: background-color 0.2s ease-in-out;
 }
 .popup-directions-btn:hover { background-color: #0056b3; }
 
+/* Filter Toggles */
 #filter-toggles {
 display: flex; align-items: center; padding: 8px 4px;
 background-color: #f0f0f0; border-radius: 5px;
@@ -228,17 +150,32 @@ color: #555; width: 100%; user-select: none;
 margin-right: 10px; transform: scale(1.2); accent-color: #007bff;
 }
 
+/* Add this new rule to your style.css file */
+
+.stealthed-marker .marker-pin-avatar::after, 
+.stealthed-marker .marker-pin::after {
+    content: '👻'; /* Ghost emoji! */
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    padding: 2px;
+    line-height: 1;
+    text-shadow: 0 0 2px #000;
+}
+
 /* Mobile Layout Adjustments */
 @media (max-width: 767px) {
+.header { flex-direction: column; padding-bottom: 15px; }
+.header-content { text-align: center; margin-bottom: 10px; }
 #controls-container {
-top: auto; bottom: 0; left: 0; right: 0;
-width: 100%; max-width: none; border-radius: 15px 15px 0 0;
-box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-width: none;
+border-radius: 15px 15px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
 padding: 10px 15px 15px; max-height: 45vh; box-sizing: border-box;
 }
 #not-located-list, #safezone-list, #stealth-list { max-height: 25vh; }
-
-/* Reorder items within the panel for better mobile UX */
 #safezone-container { order: 1; }
 #stealth-container { order: 2; }
 #not-located-container { order: 3; }
