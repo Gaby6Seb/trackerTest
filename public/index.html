@@ -65,12 +65,12 @@
 
     const socket = io();
     let currentMarkers = {}; 
-    let allPlayersWithLocation = []; // Renamed for clarity
+    let allPlayersWithLocation = [];
     let allPanelData = {};
     let showAllPlayers = false;
     let initialMapLoad = true;
+    let timerUpdateInterval = null; // --- NEW: For managing the countdown timer interval
 
-    // --- MODIFIED: Added isLastKnown parameter ---
     const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown) => {
       const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
       const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
@@ -78,7 +78,6 @@
       const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
       let pinStyles = `background-color: ${color || '#3388ff'};`;
       if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
-      // --- MODIFIED: Only show pulse effect if NOT a last-known location ---
       const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
       const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
       const iconSize = avatarUrl ? [40, 52] : [30, 42];
@@ -86,10 +85,39 @@
       return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
     };
     
+    // --- NEW: Function to manage all countdown timers efficiently ---
+    function startTimerUpdates() {
+        if (timerUpdateInterval) clearInterval(timerUpdateInterval);
+
+        timerUpdateInterval = setInterval(() => {
+            const timerElements = document.querySelectorAll('.stealth-timer');
+            if (timerElements.length === 0) {
+                clearInterval(timerUpdateInterval);
+                timerUpdateInterval = null;
+                return;
+            }
+            timerElements.forEach(el => {
+                const expiresAt = el.dataset.expiresAt;
+                if (!expiresAt) {
+                    el.textContent = '';
+                    return;
+                }
+                const remainingMs = new Date(expiresAt) - new Date();
+                if (remainingMs <= 0) {
+                    el.textContent = ' (Expired)';
+                } else {
+                    const totalSeconds = Math.floor(remainingMs / 1000);
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    el.textContent = ` (${minutes}:${seconds.toString().padStart(2, '0')} left)`;
+                }
+            });
+        }, 1000);
+    }
+
     socket.on('connect', () => document.querySelector('.subtitle').textContent = 'Connected. Waiting for location data...');
 
     socket.on('locationUpdate', (data) => {
-      // --- MODIFIED: Combine all players with coordinates for map rendering ---
       allPlayersWithLocation = [
           ...data.located.map(p => ({ ...p, statusType: 'located' })),
           ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
@@ -107,14 +135,18 @@
                   listItem.dataset.uid = player.u;
                   let details = reasonKey && player[reasonKey] ? ` - ${player[reasonKey]}` : '';
 
-                  // --- MODIFIED: Make list item clickable if it has coords ---
                   if (player.lat && player.lng) {
                       listItem.classList.add('clickable-list-item');
                       listItem.onclick = () => panToLastLocation(player.lat, player.lng);
                   }
                   
-                  // --- MODIFIED: Removed time remaining ---
-                  listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}`;
+                  // --- MODIFIED: Add timer HTML for stealthed players ---
+                  let timerHtml = '';
+                  if (containerId === 'stealth-container' && player.stealthExpiresAt) {
+                      timerHtml = `<span class="stealth-timer" data-expires-at="${player.stealthExpiresAt}"></span>`;
+                  }
+
+                  listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${timerHtml}`;
                   list.appendChild(listItem);
               });
               container.style.display = 'flex';
@@ -126,14 +158,15 @@
       populateList('safezone-container', 'safezone-list', data.safeZone);
       populateList('stealth-container', 'stealth-list', data.stealthed);
       populateList('not-located-container', 'not-located-list', data.notLocated, 'reason');
+      
+      startTimerUpdates(); // --- NEW: Start/restart the countdown timers
 
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
       if (initialMapLoad) initialMapLoad = false;
     });
 
-    // --- NEW: Function to pan map to a location ---
     function panToLastLocation(lat, lng) {
-        map.setView([lat, lng], 17); // Zoom in closer for last known locations
+        map.setView([lat, lng], 17);
     }
 
     function expandPanel(containerId) {
@@ -183,7 +216,7 @@
         window.open(url, '_blank');
     }
 
-function filterMarkers(searchTerm, initialLoad = false) {
+    function filterMarkers(searchTerm, initialLoad = false) {
         markers.clearLayers(); 
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const foundPlayerCoords = []; 
@@ -192,18 +225,13 @@ function filterMarkers(searchTerm, initialLoad = false) {
         allPlayersWithLocation.forEach(user => { 
             const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
             
-            // --- MODIFICATION 3: Clarified filtering logic ---
-            // A player is shown if:
-            // 1. "Show All" is checked, OR
-            // 2. They are a teammate, OR
-            // 3. They are a target, OR
-            // 4. Their location is a "last known" pin (safe/stealth)
-            const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
-            const shouldDisplay = showAllPlayers || role === 'teammate' || role === 'target' || isLastKnown;
+            // --- BUG FIX: Corrected the display logic ---
+            // A player is shown if: "Show All" is checked, OR they are a teammate, OR they are a target.
+            // The "last known" status no longer forces them to be visible.
+            const shouldDisplay = showAllPlayers || role === 'teammate' || role === 'target';
             
             if (!shouldDisplay) return;
 
-            // Filter by search term
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
             const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
@@ -213,10 +241,9 @@ function filterMarkers(searchTerm, initialLoad = false) {
                 foundPlayerCoords.push(L.latLng(lat, lng));
                 
                 let popupContent;
-                // isLastKnown is already defined above
+                const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
 
                 if (isLastKnown) {
-                     // This will now correctly display the last known update time
                      popupContent = `
                         <div class="popup-header" style="background-color: ${teamColor || '#999'};">
                             <span>${firstName} ${lastName}</span>
@@ -279,8 +306,7 @@ function filterMarkers(searchTerm, initialLoad = false) {
             else if (foundPlayerCoords.length === 1) map.setView(foundPlayerCoords[0], 16);
         } else if (initialLoad && allPlayersWithLocation.length > 0) {
             const initialCoords = allPlayersWithLocation.filter(p => {
-                 const isLastKnown = p.statusType === 'safeZone' || p.statusType === 'stealthed';
-                 return showAllPlayers || p.role === 'teammate' || p.role === 'target' || isLastKnown;
+                 return showAllPlayers || p.role === 'teammate' || p.role === 'target';
             }).map(p => L.latLng(p.lat, p.lng));
             if (initialCoords.length > 0) map.fitBounds(L.latLngBounds(initialCoords), { padding: [50, 50] });
         }
