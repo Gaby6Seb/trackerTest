@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Splashin' Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(45deg, #007bff, #00bfff);
+            color: #333;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 {
+            margin-bottom: 10px;
+            font-size: 2em;
+            color: #007bff;
+        }
+        p {
+            margin-bottom: 30px;
+            color: #666;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 15px;
+            display: none; /* Hidden by default */
+        }
+		.input-group { margin-bottom: 20px; text-align: left; }
+        .remember-me {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-bottom: 25px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .remember-me input { margin-right: 8px; }
+        .status-message {
+            margin-top: 20px;
+            color: #333;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div id="login-box">
+            <h1>Welcome</h1>
+            <p>Please log in to continue</p>
+            <form id="login-form">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="remember-me">
+                    <input type="checkbox" id="remember-me" name="rememberMe">
+                    <label for="remember-me">Remember me</label>
+                </div>
+                <button type="submit">Login</button>
+                <p id="error-message" class="error-message"></p>
+            </form>
+        </div>
+        <div id="status-box" style="display: none;">
+            <p id="status-message" class="status-message"></p>
+        </div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const errorMessage = document.getElementById('error-message');
+        const loginBox = document.getElementById('login-box');
+        const statusBox = document.getElementById('status-box');
+        const statusMessage = document.getElementById('status-message');
+
+        // Function to store user data and redirect
+        function completeLogin(data) {
+            localStorage.setItem('username', data.username);
+            localStorage.setItem('isMaster', data.isMaster);
+            localStorage.setItem('displayName', data.displayName);
+            localStorage.setItem('canSeeAllPlayers', data.canSeeAllPlayers);
+            localStorage.setItem('canSeeLastKnownLocation', data.canSeeLastKnownLocation);
+            // Also store the token if it exists
+            if (data.token) {
+                localStorage.setItem('authToken', data.token);
+            }
+            window.location.href = '/dashboard.html';
+        }
+
+        // --- NEW: Auto-login with token on page load ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                loginBox.style.display = 'none';
+                statusBox.style.display = 'block';
+                statusMessage.textContent = 'Logging you in automatically...';
+
+                try {
+                    const res = await fetch('/token-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        completeLogin(data);
+                    } else {
+                        // Token is invalid or expired
+                        localStorage.removeItem('authToken');
+                        loginBox.style.display = 'block';
+                        statusBox.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Token login failed:', error);
+                    loginBox.style.display = 'block';
+                    statusBox.style.display = 'none';
+                }
+            }
+        });
+
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMessage.style.display = 'none';
+
+            const username = loginForm.username.value;
+            const password = loginForm.password.value;
+            const rememberMe = loginForm.rememberMe.checked;
+
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, rememberMe })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    completeLogin(data);
+                } else {
+                    const errorData = await res.json();
+                    errorMessage.textContent = errorData.message || 'Invalid credentials. Please try again.';
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                errorMessage.textContent = 'An error occurred. Please check your connection.';
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

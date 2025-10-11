@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splashin' Live Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+        <h1>Splashin' Live Dashboard</h1>
+        <p class="subtitle">Connecting...</p>
+    </div>
+    <div class="user-info">
+        <span id="display-name"></span>
+        <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="controls-container">
+    <div id="search-container">
+        <input type="text" id="player-search" placeholder="Search by name or team...">
+    </div>
+    <div id="filter-toggles">
+      <label for="show-all-toggle">
+        <input type="checkbox" id="show-all-toggle">
+        Show All Players
+      </label>
+    </div>
+    <div id="safezone-container" class="minimized">
+        <h2 id="safezone-header">
+            Players in Safe Zone
+            <span id="safezone-toggle-icon">+</span>
+        </h2>
+        <ul id="safezone-list"></ul>
+    </div>
+    <div id="stealth-container" class="minimized">
+        <h2 id="stealth-header">
+            Stealthed Players
+            <span id="stealth-toggle-icon">+</span>
+        </h2>
+        <ul id="stealth-list"></ul>
+    </div>
+    <div id="not-located-container" class="minimized">
+        <h2 id="not-located-header">
+            Players Not on Map
+            <span id="toggle-icon">+</span>
+        </h2>
+        <ul id="not-located-list"></ul>
+    </div>
+  </div>
+
+<script>
+    // --- Login Authentication Guard ---
+    const username = localStorage.getItem('username');
+    const isMaster = localStorage.getItem('isMaster') === 'true';
+    const displayName = localStorage.getItem('displayName');
+    const canSeeAllPlayers = localStorage.getItem('canSeeAllPlayers') === 'true';
+    const canSeeLastKnownLocation = localStorage.getItem('canSeeLastKnownLocation') === 'true';
+
+    if (!username) {
+        window.location.href = '/'; // Redirect to login page if not authenticated
+    }
+
+document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('display-name').textContent = displayName || username;
+        
+        if (isMaster || canSeeAllPlayers) {
+            document.getElementById('filter-toggles').style.display = 'flex';
+        } else {
+            document.getElementById('filter-toggles').style.display = 'none';
+        }
+
+        // --- UPDATED: Logout Button Logic ---
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            const token = localStorage.getItem('authToken');
+            
+            if (token) {
+                try {
+                    // Tell the server to invalidate the token
+                    await fetch('/logout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+                } catch (err) {
+                    console.error("Failed to notify server of logout:", err);
+                }
+            }
+            
+            // Clear local storage and redirect regardless of server response
+            localStorage.clear();
+            socket.disconnect();
+            window.location.href = '/';
+        });
+    });
+
+    const map = L.map('map').setView([33.04, -97.02], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const markers = L.markerClusterGroup({
+        maxClusterRadius: 60, disableClusteringAtZoom: 14, 
+        chunkedLoading: true, spiderfyOnMaxZoom: true 
+    });
+    map.addLayer(markers); 
+
+    const socket = io();
+    let currentMarkers = {}; 
+    let allPlayersWithLocation = [];
+    let allPanelData = {};
+    let showAllPlayers = false;
+    let initialMapLoad = true;
+    let timerUpdateInterval = null;
+
+const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => { // <-- Added isStealthed
+  const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
+  const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
+  const stealthedClass = isStealthed ? 'stealthed-marker' : ''; // <-- New line
+  const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
+  const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
+  let pinStyles = `background-color: ${color || '#3388ff'};`;
+  if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
+  const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
+  const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`; // <-- Added stealthedClass
+  const iconSize = avatarUrl ? [40, 52] : [30, 42];
+  const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
+  return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
+};
+    
+    function startTimerUpdates() {
+        if (timerUpdateInterval) clearInterval(timerUpdateInterval);
+
+        timerUpdateInterval = setInterval(() => {
+            const timerElements = document.querySelectorAll('.stealth-timer');
+            if (timerElements.length === 0) {
+                clearInterval(timerUpdateInterval);
+                timerUpdateInterval = null;
+                return;
+            }
+            timerElements.forEach(el => {
+                const expiresAt = el.dataset.expiresAt;
+                if (!expiresAt) {
+                    el.textContent = '';
+                    return;
+                }
+                const remainingMs = new Date(expiresAt) - new Date();
+                if (remainingMs <= 0) {
+                    el.textContent = ' (Expired)';
+                } else {
+                    const totalSeconds = Math.floor(remainingMs / 1000);
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    el.textContent = ` (${minutes}:${seconds.toString().padStart(2, '0')} left)`;
+                }
+            });
+        }, 1000);
+    }
+
+    socket.on('connect', () => {
+        document.querySelector('.subtitle').textContent = 'Authenticating...';
+        socket.emit('authenticate', { username });
+    });
+
+    socket.on('auth_error', (message) => {
+        alert(`Authentication Error: ${message}`);
+        localStorage.clear();
+        window.location.href = '/';
+    });
+
+    socket.on('locationUpdate', (data) => {
+      // The server will have already filtered out lat/lng for stealthed/safezone players
+      // if the user doesn't have permission, so the .filter() calls here work automatically.
+      allPlayersWithLocation = [
+          ...data.located.map(p => ({ ...p, statusType: 'located' })),
+          ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
+          ...data.stealthed.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'stealthed' })),
+      ];
+      allPanelData = data;
+
+      const populateList = (containerId, listId, players, reasonKey) => {
+          const container = document.getElementById(containerId);
+          const list = document.getElementById(listId);
+          list.innerHTML = '';
+          if (players && players.length > 0) {
+              players.sort((a, b) => a.firstName.localeCompare(b.firstName)).forEach(player => {
+                  const listItem = document.createElement('li');
+                  listItem.dataset.uid = player.u;
+                  let details = reasonKey && player[reasonKey] ? ` - ${player[reasonKey]}` : '';
+
+                  // Only make list items clickable if they have a location to pan to
+                  if (player.lat && player.lng) {
+                      listItem.classList.add('clickable-list-item');
+                      listItem.onclick = () => panToLastLocation(player.lat, player.lng);
+                  }
+                  
+                  let timerHtml = '';
+                  if (containerId === 'stealth-container' && player.stealthExpiresAt) {
+                      timerHtml = `<span class="stealth-timer" data-expires-at="${player.stealthExpiresAt}"></span>`;
+                  }
+
+                  listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${timerHtml}`;
+                  list.appendChild(listItem);
+              });
+              container.style.display = 'flex';
+          } else {
+              container.style.display = 'none';
+          }
+      };
+
+      populateList('safezone-container', 'safezone-list', data.safeZone);
+      populateList('stealth-container', 'stealth-list', data.stealthed);
+      populateList('not-located-container', 'not-located-list', data.notLocated, 'reason');
+      
+      startTimerUpdates();
+
+      filterMarkers(document.getElementById('player-search').value, initialMapLoad);
+      if (initialMapLoad) initialMapLoad = false;
+    });
+
+    function panToLastLocation(lat, lng) {
+        map.setView([lat, lng], 17);
+    }
+
+    function expandPanel(containerId) {
+        const container = document.getElementById(containerId);
+        if (container && container.classList.contains('minimized')) {
+            container.classList.remove('minimized');
+            const icon = container.querySelector('h2 span');
+            if (icon) icon.textContent = '-';
+        }
+    }
+
+    function findAndExpandList(searchTerm) {
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
+        const listsToSearch = [
+            { data: allPanelData.safeZone, containerId: 'safezone-container' },
+            { data: allPanelData.stealthed, containerId: 'stealth-container' },
+            { data: allPanelData.notLocated, containerId: 'not-located-container' }
+        ];
+        for (const listInfo of listsToSearch) {
+            if (listInfo.data) {
+                const foundPlayer = listInfo.data.find(p => 
+                    (`${p.firstName || ''} ${p.lastName || ''}`.toLowerCase().includes(lowerCaseSearchTerm)) ||
+                    ((p.teamName || '').toLowerCase().includes(lowerCaseSearchTerm))
+                );
+                if (foundPlayer) {
+                    expandPanel(listInfo.containerId);
+                    const listItem = document.querySelector(`li[data-uid="${foundPlayer.u}"]`);
+                    if(listItem) {
+                        listItem.classList.add('highlighted');
+                        listItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    document.getElementById('player-search').addEventListener('input', (e) => filterMarkers(e.target.value, false));
+    document.getElementById('show-all-toggle').addEventListener('change', (e) => {
+        showAllPlayers = e.target.checked;
+        filterMarkers(document.getElementById('player-search').value, false);
+    });
+
+    function getDirections(buttonElement) {
+        const url = `https://maps.google.com/?daddr=${buttonElement.dataset.lat},${buttonElement.dataset.lng}`;
+        window.open(url, '_blank');
+    }
+
+    function filterMarkers(searchTerm, initialLoad = false) {
+        markers.clearLayers(); 
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const foundPlayerCoords = []; 
+        const updatedUids = new Set(); 
+        
+        allPlayersWithLocation.forEach(user => { 
+            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
+            
+            const isNeutral = role !== 'teammate' && role !== 'target';
+            const shouldDisplay = showAllPlayers || !isNeutral;
+            
+            if (!shouldDisplay) return;
+
+            const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
+            const fullTeamName = (teamName || '').toLowerCase();
+            const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
+
+            if (isMatch) {
+                updatedUids.add(u);
+                foundPlayerCoords.push(L.latLng(lat, lng));
+                
+                let popupContent;
+                const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
+
+                if (isLastKnown) {
+                     popupContent = `
+                        <div class="popup-header" style="background-color: ${teamColor || '#999'};">
+                            <span>${firstName} ${lastName}</span>
+                        </div>
+                        <div class="popup-body">
+                            <strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br>
+                            <strong>Last Known Location</strong>
+                        </div>
+                         <div class="popup-footer">
+                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
+                        </div>
+                    `;
+                } else {
+                    const batteryIcon = isCharging ? '⚡' : '🔋';
+                    const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
+                    let roleLabel = '';
+                    if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
+                    else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
+                    popupContent = `
+                        <div class="popup-header" style="background-color: ${teamColor || '#3388ff'};">
+                            <span>${firstName} ${lastName}</span>
+                            ${roleLabel}
+                        </div>
+                        <div class="popup-body">
+                            <strong>Team:</strong> ${teamName || 'N/A'}<br>
+                            <strong>Speed:</strong> ${speed.toFixed(1)} m/s<br>
+                            <strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br>
+                            <strong>Battery:</strong> ${batteryStatus}<br>
+                        </div>
+                        <div class="popup-actions">
+                            <button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button>
+                        </div>
+                        <div class="popup-footer">
+                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
+                        </div>
+                    `;
+                }
+
+                const isStealthed = statusType === 'stealthed';
+				const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed);
+
+                if (currentMarkers[u]) {
+                  currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
+                } else {
+                  currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent);
+                }
+                markers.addLayer(currentMarkers[u]);
+            }
+        });
+
+        document.querySelector('.subtitle').textContent = `Tracking ${markers.getLayers().length} players on map.`;
+
+        if (markers.getLayers().length === 0 && lowerCaseSearchTerm) {
+            findAndExpandList(lowerCaseSearchTerm);
+        } else {
+            document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
+        }
+
+        if (lowerCaseSearchTerm && foundPlayerCoords.length > 0) {
+            if (foundPlayerCoords.length > 1) map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50] });
+            else if (foundPlayerCoords.length === 1) map.setView(foundPlayerCoords[0], 16);
+        } else if (initialLoad && allPlayersWithLocation.length > 0) {
+            const initialCoords = allPlayersWithLocation.filter(p => {
+                 return showAllPlayers || p.role === 'teammate' || p.role === 'target';
+            }).map(p => L.latLng(p.lat, p.lng));
+            if (initialCoords.length > 0) map.fitBounds(L.latLngBounds(initialCoords), { padding: [50, 50] });
+        }
+        for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
+    }
+    
+    socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
+    
+    const setupCollapsiblePanel = (headerId, containerId, iconId) => {
+        const header = document.getElementById(headerId);
+        const container = document.getElementById(containerId);
+        const icon = document.getElementById(iconId);
+        header.addEventListener('click', () => {
+            container.classList.toggle('minimized');
+            icon.textContent = container.classList.contains('minimized') ? '+' : '-';
+        });
+    };
+
+    setupCollapsiblePanel('safezone-header', 'safezone-container', 'safezone-toggle-icon');
+    setupCollapsiblePanel('stealth-header', 'stealth-container', 'stealth-toggle-icon');
+    setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-icon');
+</script>
+
+</body>
+</html>
