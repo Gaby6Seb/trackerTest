@@ -33,12 +33,16 @@ const authData = {
     goture_meta_security: {},
 };
 
-// --- State Management (Unchanged) ---
+// --- State Management (Unchanged part) ---
 let isFetching = false;
 let lastSuccessfulData = null;
 const FETCH_INTERVAL_MS = 10000;
 const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
 let playerLastKnownLocationMap = new Map();
+
+// --- NEW: State management for stealth timers ---
+const stealthExpirationMap = new Map();
+const STEALTH_REFETCH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
 function saveMapToFile() {
     const array = Array.from(playerLastKnownLocationMap.entries());
@@ -86,7 +90,7 @@ async function runApiRequests() {
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
 
-        // --- THIS IS THE RESTORED CODE BLOCK ---
+        // Roster fetching...
         let currentCursor = 0;
         let hasMorePages = true;
         while (hasMorePages) {
@@ -103,7 +107,6 @@ async function runApiRequests() {
             }
         }
         console.log(`Total unique players in roster: ${richDataMap.size}`);
-        // --- END OF RESTORED CODE ---
 
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
@@ -155,7 +158,45 @@ async function runApiRequests() {
         
         if (mapWasUpdated) { saveMapToFile(); }
 
-        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayers, safeZone: safeZonePanelList };
+        // --- NEW: LOGIC TO FETCH AND MANAGE STEALTH TIMERS ---
+        const currentStealthedIds = new Set(stealthedPlayers.map(p => p.u));
+
+        // 1. Fetch new/stale stealth expiration times
+        for (const player of stealthedPlayers) {
+            const existingEntry = stealthExpirationMap.get(player.u);
+            const shouldFetch = !existingEntry || (Date.now() - existingEntry.fetchedAt > STEALTH_REFETCH_INTERVAL_MS);
+
+            if (shouldFetch) {
+                try {
+                    console.log(`Fetching stealth expiration for ${player.firstName}...`);
+                    const fullUserDataUrl = `${SUPABASE_URL}/rest/v1/rpc/get_map_user_full_v2`;
+                    const response = await axios.post(fullUserDataUrl, { gid: GAME_ID, uid: player.u }, { headers: commonHeaders });
+                    if (response.data && response.data.ive) { // 'ive' is the stealth expiration field
+                        stealthExpirationMap.set(player.u, { expiresAt: response.data.ive, fetchedAt: Date.now() });
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 250)); // Be nice to the API
+                } catch (err) {
+                    console.error(`Failed to fetch stealth data for ${player.u}:`, err.message);
+                }
+            }
+        }
+        
+        // 2. Clean up map: remove players who are no longer stealthed
+        for (const uid of stealthExpirationMap.keys()) {
+            if (!currentStealthedIds.has(uid)) {
+                stealthExpirationMap.delete(uid);
+                console.log(`Player ${uid} is no longer stealthed, removed from timer map.`);
+            }
+        }
+
+        // 3. Attach expiration times to the data being emitted
+        const stealthedPlayersWithTimers = stealthedPlayers.map(player => {
+            const expirationData = stealthExpirationMap.get(player.u);
+            return { ...player, stealthExpiresAt: expirationData ? expirationData.expiresAt : null };
+        });
+        // --- END OF NEW LOGIC ---
+
+        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayersWithTimers, safeZone: safeZonePanelList };
         lastSuccessfulData = dataToEmit;
         io.emit('locationUpdate', dataToEmit);
 
