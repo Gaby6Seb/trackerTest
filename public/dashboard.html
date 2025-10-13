@@ -272,7 +272,8 @@
     });
     
     socket.on('auth_success', (data) => {
-        if (data.teammates && data.teammates.length > 0) {
+        if (data.isMasterNotifier || (data.teammates && data.teammates.length > 0)) {
+            // The second parameter `isMasterNotifier` is no longer needed here as the logic is now unified
             setupNotificationModal(data.teammates);
         }
     });
@@ -480,7 +481,7 @@
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
     }
     
-    // --- CORRECTED: Restored working structure for the modal setup ---
+    // --- CORRECTED: Simplified and fixed the notification modal setup ---
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
@@ -491,30 +492,7 @@
         const changePlayerLink = document.getElementById('change-player-link');
         const saveBtn = document.getElementById('save-settings-btn');
         const settingsTitle = settingsStep.querySelector('h2');
-        const proximitySettingRow = document.querySelector('#proximity-radius').closest('.setting-row');
         
-        // This function shows the settings panel, adjusting the UI for masters vs. regular users
-        const showUserSettings = (playerName) => {
-            playerSelectionStep.style.display = 'none';
-            settingsStep.style.display = 'block';
-            settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
-            
-            // A master user doesn't have a personal location, so proximity alerts don't apply to them directly.
-            // However, they can select a player to receive alerts *as if they were them*.
-            // We use the global isMaster const which is reliably set on page load.
-            if (isMaster) {
-                 // For a master, the concept of their "own" proximity is complex.
-                 // We will allow them to set proximity for the player they selected.
-                 proximitySettingRow.style.display = 'block';
-                 changePlayerLink.style.display = 'inline'; // Allow master to change who they're "impersonating"
-            } else {
-                 proximitySettingRow.style.display = 'block';
-                 changePlayerLink.style.display = 'inline';
-            }
-            loadSettings();
-        };
-
-        // Populate player list for ALL users with notification permissions.
         teammateList.innerHTML = '';
         teammates.forEach(player => {
             const li = document.createElement('li');
@@ -527,12 +505,18 @@
             };
             teammateList.appendChild(li);
         });
-            
+
+        const showUserSettings = (playerName) => {
+            playerSelectionStep.style.display = 'none';
+            settingsStep.style.display = 'block';
+            settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
+            loadSettings();
+        };
+        
         openBtn.onclick = () => {
             modalOverlay.style.display = 'flex';
             const myPlayerId = localStorage.getItem('myPlayerId');
             const myPlayerName = localStorage.getItem('myPlayerName');
-            // If a player has been chosen before, go straight to settings. Otherwise, show selection.
             if (myPlayerId && myPlayerName) {
                 showUserSettings(myPlayerName);
             } else {
@@ -594,7 +578,7 @@
             const proximityMiles = parseFloat(proximitySlider.value);
 
             if (proximityMiles > 0 && !myPlayerId) {
-                alert("Please select a player from the list to enable proximity alerts.");
+                alert("Please select your player profile to enable proximity alerts.");
                 return;
             }
             
