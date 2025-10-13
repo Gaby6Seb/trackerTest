@@ -304,21 +304,20 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
         // We no longer ask for permission here, as OneSignal handles it.
     }
     
-    socket.on('proximity_alert', (data) => {
-        console.log('Proximity Alert:', data);
-        showInAppNotification('Proximity Alert!', {
-            body: `${data.player.name} (${data.player.teamName}) has entered your ${data.distance} mile radius.`,
-            icon: '/favicon.ico'
-        });
+socket.on('proximity_alert', (data) => {
+    console.log('Proximity Alert:', data);
+    showInAppNotification('Proximity Alert!', {
+        body: `${data.player.name} (${data.player.teamName}) has entered your ${data.distance} mile radius.`
     });
+});
 
-    socket.on('ghost_alert', (data) => {
-        console.log('Ghost Alert:', data);
-        showInAppNotification('Ghost Alert!', {
-            body: `${data.player.name} (${data.player.teamName}) just went off the grid.`,
-            icon: '/favicon.ico'
-        });
+socket.on('ghost_alert', (data) => {
+    console.log('Ghost Alert:', data);
+    showInAppNotification('Ghost Alert!', {
+        body: `${data.player.name} (${data.player.teamName}) just went off the grid.`
     });
+});
+
 
 
     function panToLastLocation(lat, lng) {
@@ -643,3 +642,4 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
 
 </body>
 </html>
+
