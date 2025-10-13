@@ -69,9 +69,8 @@
         .error-message {
             color: #dc3545;
             margin-top: 15px;
-            display: none; /* Hidden by default */
+            display: none;
         }
-		.input-group { margin-bottom: 20px; text-align: left; }
         .remember-me {
             display: flex;
             align-items: center;
@@ -122,14 +121,13 @@
         const statusBox = document.getElementById('status-box');
         const statusMessage = document.getElementById('status-message');
 
-        // Function to store user data and redirect
         function completeLogin(data) {
             localStorage.setItem('username', data.username);
             localStorage.setItem('isMaster', data.isMaster);
             localStorage.setItem('displayName', data.displayName);
             localStorage.setItem('canSeeAllPlayers', data.canSeeAllPlayers);
             localStorage.setItem('canSeeLastKnownLocation', data.canSeeLastKnownLocation);
-            localStorage.setItem('canUseNotifications', data.canUseNotifications); // <-- NEW
+            localStorage.setItem('canUseNotifications', data.canUseNotifications);
             
             if (data.token) {
                 localStorage.setItem('authToken', data.token);
@@ -137,7 +135,6 @@
             window.location.href = '/dashboard.html';
         }
 
-        // --- Auto-login with token on page load ---
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('authToken');
             if (token) {
@@ -167,7 +164,6 @@
                 }
             }
         });
-
 
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
