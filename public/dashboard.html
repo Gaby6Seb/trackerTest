@@ -273,7 +273,8 @@
     
     socket.on('auth_success', (data) => {
         if (data.isMasterNotifier || (data.teammates && data.teammates.length > 0)) {
-            setupNotificationModal(data.teammates, data.isMasterNotifier);
+            // The second parameter `isMasterNotifier` is no longer needed here as the logic is now unified
+            setupNotificationModal(data.teammates);
         }
     });
 
@@ -480,7 +481,8 @@
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
     }
     
-    function setupNotificationModal(teammates, isMaster = false) {
+    // --- CORRECTED: Simplified and fixed the notification modal setup ---
+    function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
         const closeBtn = document.getElementById('modal-close-btn');
@@ -490,93 +492,46 @@
         const changePlayerLink = document.getElementById('change-player-link');
         const saveBtn = document.getElementById('save-settings-btn');
         const settingsTitle = settingsStep.querySelector('h2');
-        const proximitySettingRow = document.querySelector('#proximity-radius').closest('.setting-row');
         
-        // This 'isMaster' check is only for UI; the critical bug was in the saveBtn logic below
-        if (isMaster) {
-            teammateList.innerHTML = '';
-            teammates.forEach(player => {
-                const li = document.createElement('li');
-                li.textContent = player.name;
-                li.dataset.id = player.id;
-                li.onclick = () => {
-                    localStorage.setItem('myPlayerId', player.id);
-                    localStorage.setItem('myPlayerName', player.name);
-                    showRegularUserSettings(player.name);
-                };
-                teammateList.appendChild(li);
-            });
-             const showRegularUserSettings = (playerName) => {
-                playerSelectionStep.style.display = 'none';
-                settingsStep.style.display = 'block';
-                settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
-                changePlayerLink.style.display = 'inline';
-                // Proximity should be available for masters if they select a player
-                proximitySettingRow.style.display = 'block'; 
-                loadSettings(false); // Load as a regular user to show all settings
+        teammateList.innerHTML = '';
+        teammates.forEach(player => {
+            const li = document.createElement('li');
+            li.textContent = player.name;
+            li.dataset.id = player.id;
+            li.onclick = () => {
+                localStorage.setItem('myPlayerId', player.id);
+                localStorage.setItem('myPlayerName', player.name);
+                showUserSettings(player.name);
             };
-             openBtn.onclick = () => {
-                modalOverlay.style.display = 'flex';
-                const myPlayerId = localStorage.getItem('myPlayerId');
-                const myPlayerName = localStorage.getItem('myPlayerName');
-                if (myPlayerId && myPlayerName) {
-                    showRegularUserSettings(myPlayerName);
-                } else {
-                    playerSelectionStep.style.display = 'block';
-                    settingsStep.style.display = 'none';
-                }
-            };
-             changePlayerLink.onclick = (e) => {
-                e.preventDefault();
-                localStorage.removeItem('myPlayerId');
-                localStorage.removeItem('myPlayerName');
+            teammateList.appendChild(li);
+        });
+
+        const showUserSettings = (playerName) => {
+            playerSelectionStep.style.display = 'none';
+            settingsStep.style.display = 'block';
+            settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
+            loadSettings();
+        };
+        
+        openBtn.onclick = () => {
+            modalOverlay.style.display = 'flex';
+            const myPlayerId = localStorage.getItem('myPlayerId');
+            const myPlayerName = localStorage.getItem('myPlayerName');
+            if (myPlayerId && myPlayerName) {
+                showUserSettings(myPlayerName);
+            } else {
                 playerSelectionStep.style.display = 'block';
                 settingsStep.style.display = 'none';
-            };
-        } 
-        else {
-            teammateList.innerHTML = '';
-            teammates.forEach(player => {
-                const li = document.createElement('li');
-                li.textContent = player.name;
-                li.dataset.id = player.id;
-                li.onclick = () => {
-                    localStorage.setItem('myPlayerId', player.id);
-                    localStorage.setItem('myPlayerName', player.name);
-                    showRegularUserSettings(player.name);
-                };
-                teammateList.appendChild(li);
-            });
+            }
+        };
 
-            const showRegularUserSettings = (playerName) => {
-                playerSelectionStep.style.display = 'none';
-                settingsStep.style.display = 'block';
-                settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
-                changePlayerLink.style.display = 'inline';
-                proximitySettingRow.style.display = 'block';
-                loadSettings(false);
-            };
-            
-            openBtn.onclick = () => {
-                modalOverlay.style.display = 'flex';
-                const myPlayerId = localStorage.getItem('myPlayerId');
-                const myPlayerName = localStorage.getItem('myPlayerName');
-                if (myPlayerId && myPlayerName) {
-                    showRegularUserSettings(myPlayerName);
-                } else {
-                    playerSelectionStep.style.display = 'block';
-                    settingsStep.style.display = 'none';
-                }
-            };
-
-            changePlayerLink.onclick = (e) => {
-                e.preventDefault();
-                localStorage.removeItem('myPlayerId');
-                localStorage.removeItem('myPlayerName');
-                playerSelectionStep.style.display = 'block';
-                settingsStep.style.display = 'none';
-            };
-        }
+        changePlayerLink.onclick = (e) => {
+            e.preventDefault();
+            localStorage.removeItem('myPlayerId');
+            localStorage.removeItem('myPlayerName');
+            playerSelectionStep.style.display = 'block';
+            settingsStep.style.display = 'none';
+        };
 
         const closeModal = () => modalOverlay.style.display = 'none';
         closeBtn.onclick = closeModal;
@@ -604,11 +559,10 @@
             ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off');
         };
 
-        function loadSettings(forMaster = false) {
+        function loadSettings() {
             const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {};
             enableNotifications.checked = settings.enabled || false;
             
-            // Simplified: master users who select a player are treated like regular users for settings
             proximitySlider.value = settings.proximityMiles || 0;
             ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
             ghostWorldwide.checked = settings.ghostMiles === -1;
@@ -623,17 +577,14 @@
             const myPlayerId = localStorage.getItem('myPlayerId');
             const proximityMiles = parseFloat(proximitySlider.value);
 
-            // CORRECTED LOGIC: Check for a player ID if proximity is enabled
             if (proximityMiles > 0 && !myPlayerId) {
                 alert("Please select your player profile to enable proximity alerts.");
                 return;
             }
             
             const settings = {
-                // BUG FIX: Always send the selected player ID. Don't set to null for masters.
                 myPlayerId: myPlayerId, 
                 enabled: enableNotifications.checked,
-                // Don't zero out proximity for masters. Let them use it if they've selected a player.
                 proximityMiles: proximityMiles, 
                 ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
             };
