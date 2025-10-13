@@ -132,7 +132,6 @@
     OneSignalDeferred.push(function(OneSignal) {
         OneSignal.init({
             appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
-            // --- FIX: Add this line for local development ---
             allowLocalhostAsSecureOrigin: true,
         }).then(() => {
             console.log("OneSignal SDK Initialized.");
@@ -151,7 +150,7 @@
         window.location.href = '/'; // Redirect to login page if not authenticated
     }
 
-document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('display-name').textContent = displayName || username;
         
         if (isMaster || canSeeAllPlayers) {
@@ -204,20 +203,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let initialMapLoad = true;
     let timerUpdateInterval = null;
 
-const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => {
-  const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
-  const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
-  const stealthedClass = isStealthed ? 'stealthed-marker' : '';
-  const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
-  const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
-  let pinStyles = `background-color: ${color || '#3388ff'};`;
-  if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
-  const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
-  const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
-  const iconSize = avatarUrl ? [40, 52] : [30, 42];
-  const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
-  return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
-};
+    const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => {
+      const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
+      const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
+      const stealthedClass = isStealthed ? 'stealthed-marker' : '';
+      const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
+      const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
+      let pinStyles = `background-color: ${color || '#3388ff'};`;
+      if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
+      const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
+      const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
+      const iconSize = avatarUrl ? [40, 52] : [30, 42];
+      const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
+      return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
+    };
     
     function startTimerUpdates() {
         if (timerUpdateInterval) clearInterval(timerUpdateInterval);
@@ -313,19 +312,13 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
       if (initialMapLoad) initialMapLoad = false;
     });
     
-    // --- REMOVED Redundant showInAppNotification function ---
-    
     socket.on('proximity_alert', (data) => {
-        // The server now sends a real push notification. A console log is sufficient here for debugging when the tab is open.
         console.log('Proximity Alert (Push Sent by Server):', data);
     });
 
     socket.on('ghost_alert', (data) => {
-        // The server now sends a real push notification.
         console.log('Ghost Alert (Push Sent by Server):', data);
     });
-
-
 
     function panToLastLocation(lat, lng) {
         map.setView([lat, lng], 17);
@@ -589,65 +582,60 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
             enableNotifications.dispatchEvent(new Event('change'));
         }
 
-// Located in dashboard.html, inside the setupNotificationModal function
+        saveBtn.onclick = async () => {
+            const myPlayerId = localStorage.getItem('myPlayerId');
+            if (!isMaster && !myPlayerId) {
+                alert("Please select your player profile first.");
+                return;
+            }
+            
+            const settings = {
+                myPlayerId: isMaster ? null : myPlayerId,
+                enabled: enableNotifications.checked,
+                proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
+                ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
+            };
+            
+            localStorage.setItem('notificationSettings', JSON.stringify(settings));
+            socket.emit('update_notification_settings', settings);
 
-saveBtn.onclick = async () => {
-    const myPlayerId = localStorage.getItem('myPlayerId');
-    if (!isMaster && !myPlayerId) {
-        alert("Please select your player profile first.");
-        return;
-    }
-    
-    const settings = {
-        myPlayerId: isMaster ? null : myPlayerId,
-        enabled: enableNotifications.checked,
-        proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
-        ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
-    };
-    
-    localStorage.setItem('notificationSettings', JSON.stringify(settings));
-    socket.emit('update_notification_settings', settings);
+            let errorOccurred = false;
+            try {
+                await window.OneSignalDeferred.push(async (OneSignal) => {
+                    if (!OneSignal.User || !OneSignal.User.pushSubscription) {
+                        errorOccurred = true;
+                        console.error("OneSignal push features are not initialized. This can be caused by an ad blocker, browser privacy settings, or an incorrect OneSignal dashboard setup (e.g., not 'Typical Site').");
+                        alert("Error: Could not initialize push notifications.\n\nPlease check the following:\n1. Disable ALL ad-blocking extensions.\n2. Ensure your OneSignal dashboard is set to 'Typical Site' integration.\n3. Make sure your browser allows notifications for this site.");
+                        return;
+                    }
 
-    // --- OneSignal Registration Logic with CRITICAL Error Handling ---
-    let errorOccurred = false;
-    try {
-        await window.OneSignalDeferred.push(async (OneSignal) => {
-            // --- THIS CHECK IS THE FIX ---
-            // It verifies that push features are available before we try to use them.
-            if (!OneSignal.User || !OneSignal.User.pushSubscription) {
+                    if (settings.enabled) {
+                        await OneSignal.User.pushSubscription.optIn();
+                        const oneSignalPlayerId = await OneSignal.User.getPushSubscriptionId();
+                        if (oneSignalPlayerId) {
+                            socket.emit('register_one_signal', oneSignalPlayerId);
+                            console.log('Registered for push notifications with ID:', oneSignalPlayerId);
+                        } else {
+                             console.warn('Opted in, but could not get a push subscription ID. This can happen if permission was just denied.');
+                        }
+                    } else {
+                        await OneSignal.User.pushSubscription.optOut();
+                        console.log('Opted out of push notifications.');
+                    }
+                });
+            } catch (e) {
                 errorOccurred = true;
-                console.error("OneSignal push features are not initialized. This can be caused by an ad blocker, browser privacy settings, or an incorrect OneSignal dashboard setup (e.g., not 'Typical Site').");
-                alert("Error: Could not initialize push notifications.\n\nPlease check the following:\n1. Disable ALL ad-blocking extensions.\n2. Ensure your OneSignal dashboard is set to 'Typical Site' integration.\n3. Make sure your browser allows notifications for this site.");
-                return; // Stop execution
+                console.error("An unhandled error occurred during OneSignal opt-in/out:", e);
+                alert("An unhandled error occurred while saving notification settings. Please check the console.");
             }
-
-            if (settings.enabled) {
-                await OneSignal.User.pushSubscription.optIn();
-                const oneSignalPlayerId = await OneSignal.User.getPushSubscriptionId();
-                if (oneSignalPlayerId) {
-                    socket.emit('register_one_signal', oneSignalPlayerId);
-                    console.log('Registered for push notifications with ID:', oneSignalPlayerId);
-                } else {
-                     console.warn('Opted in, but could not get a push subscription ID. This can happen if permission was just denied.');
-                }
-            } else {
-                await OneSignal.User.pushSubscription.optOut();
-                console.log('Opted out of push notifications.');
+            
+            closeModal();
+            if (!errorOccurred) {
+               alert('Settings saved!');
             }
-        });
-    } catch (e) {
-        errorOccurred = true;
-        console.error("An unhandled error occurred during OneSignal opt-in/out:", e);
-        alert("An unhandled error occurred while saving notification settings. Please check the console.");
-    }
-    
-    closeModal();
-    if (!errorOccurred) {
-       alert('Settings saved!');
-    }
-};
+        };
+    } // <-- **THIS IS THE FIX**. This brace was missing, causing a syntax error.
 
-    
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
     
     const setupCollapsiblePanel = (headerId, containerId, iconId) => {
@@ -667,4 +655,3 @@ saveBtn.onclick = async () => {
 
 </body>
 </html>
-
