@@ -1,15 +1,23 @@
 {
   "name": "location-tracker",
   "version": "1.0.0",
-  "description": "Splashin Live Dashboard Server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "@onesignal/node-onesignal": "^3.0.1",
-    "axios": "^1.7.2",
+    "axios": "^1.6.8",
+    "body-parser": "^2.2.0",
+    "cookie-parser": "^1.4.7",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
-  }
+    "onesignal-node": "^3.4.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {},
+  "description": ""
 }
