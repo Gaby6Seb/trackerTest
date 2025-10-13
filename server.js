@@ -132,9 +132,7 @@ app.post('/login', (req, res) => {
             saveTokensToFile();
             console.log(`Generated new persistent token for user: ${username}`);
         }
-
         const isMaster = !!userConfig.isMaster;
-
         res.json({
             token: token,
             username: username,
@@ -144,7 +142,6 @@ app.post('/login', (req, res) => {
             canSeeLastKnownLocation: isMaster || !!userConfig.canSeeLastKnownLocation,
             canUseNotifications: isMaster || !!userConfig.canUseNotifications
         });
-
     } else {
         res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -211,7 +208,8 @@ const authData = {
 let isFetching = false;
 let lastSuccessfulData = null;
 let lastRichDataMap = new Map();
-let masterTeamId = null;
+let masterTeamId = null; // The team ID of the server's API account
+let masterTargetIds = new Set(); // The target IDs of the server's API account
 const FETCH_INTERVAL_MS = 10000;
 const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
 let playerLastKnownLocationMap = new Map();
@@ -240,24 +238,32 @@ function loadMapFromFile() {
 }
 
 // --- Data Filtering & Resolution Logic ---
+// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+// CORRECTED: This function now correctly processes roles for master users.
 function filterDataForUser(fullData, userFilterConfig) {
-    if (userFilterConfig.isMaster) return fullData;
-
     const myTeamId = userFilterConfig.myTeamId;
     const targetTeamIds = userFilterConfig.targetTeamIds || new Set();
-    const allowedTeamIds = new Set([myTeamId, ...targetTeamIds]);
-    const shouldFilterByTeam = !userFilterConfig.canSeeAllPlayers;
+
+    // A master user or a user with canSeeAllPlayers should not have players filtered out.
+    const shouldFilterByTeam = !userFilterConfig.isMaster && !userFilterConfig.canSeeAllPlayers;
 
     const processPlayers = (players) => {
         if (!players) return [];
         let processed = players;
+
         if (shouldFilterByTeam) {
+            const allowedTeamIds = new Set([myTeamId, ...targetTeamIds]);
             processed = processed.filter(p => allowedTeamIds.has(p.teamId));
         }
+
+        // Always re-map roles based on the logged-in user's perspective.
         return processed.map(p => {
             let role = 'neutral';
-            if (p.teamId === myTeamId) role = 'teammate';
-            else if (targetTeamIds.has(p.teamId)) role = 'target';
+            if (p.teamId === myTeamId) {
+                role = 'teammate';
+            } else if (targetTeamIds.has(p.teamId)) {
+                role = 'target';
+            }
             return { ...p, role };
         });
     };
@@ -279,6 +285,7 @@ function filterDataForUser(fullData, userFilterConfig) {
     }
     return result;
 }
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 async function resolveReferenceLogin(loginDetails) {
     console.log(`Attempting to resolve team/target info for login: ${loginDetails.email}`);
@@ -339,9 +346,7 @@ function processNotifications(fullData) {
     const allPlayersWithLocation = new Map();
 
     [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
-        if (p.lat && p.lng) {
-            allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
-        }
+        if (p.lat && p.lng) allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
         if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
         else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
         else newPlayerStatusMap.set(p.u, 'located');
@@ -366,7 +371,7 @@ function processNotifications(fullData) {
                     if (distance <= settings.proximityMiles) {
                         currentlyInRange.add(otherPlayer.u);
                         if (!previouslyInRange.has(otherPlayer.u)) {
-                            socket.emit('proximity_alert', { player: { name: `${otherPlayer.firstName} ${otherPlayer.lastName}`, teamName: otherPlayer.teamName, }, distance: distance.toFixed(2) });
+                            socket.emit('proximity_alert', { player: { name: `${otherPlayer.firstName} ${otherPlayer.lastName}`, teamName: otherPlayer.teamName }, distance: distance.toFixed(2) });
                             const oneSignalPlayerId = socket.data.oneSignalPlayerId;
                             if (oneSignalPlayerId) {
                                 sendPushNotification([oneSignalPlayerId], 'Proximity Alert!', `${otherPlayer.firstName} ${otherPlayer.lastName} (${otherPlayer.teamName}) is now within ${distance.toFixed(2)} miles of you.`);
@@ -435,7 +440,10 @@ async function runApiRequests() {
         const targets = dashboardResponse.data.targets || [];
         const myTeam = dashboardResponse.data.myTeam || [];
         
+        // This is the server's perspective
         if (myTeam.length > 0 && myTeam[0].team_id) masterTeamId = myTeam[0].team_id;
+        masterTargetIds = new Set(targets.map(p => p.team_id).filter(Boolean));
+
         if (dashboardResponse.data.currentPlayer) richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
@@ -462,7 +470,6 @@ async function runApiRequests() {
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
         const locationResults = locationResponse.data;
 
-        const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
         const locatedPlayers = [], notLocatedPlayers = [], stealthedPlayers = [], safeZonePanelList = [];
         let mapWasUpdated = false;
 
@@ -539,56 +546,70 @@ async function runApiRequests() {
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
 
+    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+    // CORRECTED: This logic is now unified for master and regular users.
     socket.on('authenticate', async (data) => {
         const username = data.username;
         const userConfig = loginConfigs[username];
 
-        if (userConfig) {
-            socket.data.username = username;
-            console.log(`Socket ${socket.id} authenticated as user: ${username}`);
-            let filterConfig;
-            let teammates = [];
-
-            if (userConfig.isMaster) {
-                filterConfig = { isMaster: true, canSeeAllPlayers: true, canSeeLastKnownLocation: true };
-                if (userConfig.canUseNotifications && masterTeamId && lastRichDataMap.size > 0) {
-                    for (const player of lastRichDataMap.values()) {
-                        if (player.team_id === masterTeamId) {
-                            teammates.push({ id: player.id, name: `${player.first_name} ${player.last_name}`.trim() });
-                        }
-                    }
-                }
-            } else if (userConfig.team_id || userConfig.reference_login) {
-                let resolvedIds = userConfig.reference_login ? await resolveReferenceLogin(userConfig.reference_login) : { myTeamId: userConfig.team_id, targetTeamIds: new Set(userConfig.target_team_ids || []) };
-                if (resolvedIds) {
-                    filterConfig = { isMaster: false, myTeamId: resolvedIds.myTeamId, targetTeamIds: resolvedIds.targetTeamIds, canSeeAllPlayers: !!userConfig.canSeeAllPlayers, canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation };
-                    if (userConfig.canUseNotifications && lastRichDataMap.size > 0) {
-                        for (const player of lastRichDataMap.values()) {
-                            if (player.team_id === resolvedIds.myTeamId) {
-                                teammates.push({ id: player.id, name: `${player.first_name} ${player.last_name}`.trim() });
-                            }
-                        }
-                    }
-                } else {
-                    socket.emit('auth_error', 'Could not resolve team info.');
-                    return socket.disconnect();
-                }
-            } else {
-                socket.emit('auth_error', 'Server configuration for this user is invalid.');
-                return socket.disconnect();
-            }
-
-            socket.data.filterConfig = filterConfig;
-            socket.emit('auth_success', { teammates });
-
-            if (lastSuccessfulData) {
-                socket.emit('locationUpdate', filterDataForUser(lastSuccessfulData, socket.data.filterConfig));
-            }
-        } else {
+        if (!userConfig) {
             console.log(`Socket ${socket.id} failed authentication for user: ${username}.`);
-            socket.disconnect();
+            return socket.disconnect();
+        }
+
+        socket.data.username = username;
+        console.log(`Socket ${socket.id} authenticated as user: ${username}`);
+        
+        let resolvedIds = null;
+        let teammates = [];
+
+        // Attempt to resolve team info for ANY user that has it configured.
+        if (userConfig.reference_login) {
+            console.log(`[${username}] Using reference login to resolve team info...`);
+            resolvedIds = await resolveReferenceLogin(userConfig.reference_login);
+        } else if (userConfig.team_id) {
+            console.log(`[${username}] Using direct ID configuration.`);
+            resolvedIds = { myTeamId: userConfig.team_id, targetTeamIds: new Set(userConfig.target_team_ids || []) };
+        } else {
+            // Fallback for users (like a master user) without specific team info.
+            // They will see roles from the server's main account perspective.
+            console.log(`[${username}] No specific team config found. Using server default perspective.`);
+            resolvedIds = { myTeamId: masterTeamId, targetTeamIds: masterTargetIds };
+        }
+
+        if (!resolvedIds || !resolvedIds.myTeamId) {
+            console.error(`[${username}] Could not resolve team info. Disconnecting.`);
+            socket.emit('auth_error', 'Could not resolve team info.');
+            return socket.disconnect();
+        }
+
+        // Build the final filter configuration.
+        const filterConfig = {
+            isMaster: !!userConfig.isMaster,
+            myTeamId: resolvedIds.myTeamId,
+            targetTeamIds: resolvedIds.targetTeamIds,
+            canSeeAllPlayers: !!userConfig.isMaster || !!userConfig.canSeeAllPlayers,
+            canSeeLastKnownLocation: !!userConfig.isMaster || !!userConfig.canSeeLastKnownLocation
+        };
+        socket.data.filterConfig = filterConfig;
+
+        // Populate the teammate list for the notification modal.
+        if ((!!userConfig.isMaster || !!userConfig.canUseNotifications) && lastRichDataMap.size > 0) {
+            for (const player of lastRichDataMap.values()) {
+                if (player.team_id === resolvedIds.myTeamId) {
+                    teammates.push({ id: player.id, name: `${player.first_name} ${player.last_name}`.trim() });
+                }
+            }
+        }
+        
+        socket.emit('auth_success', { teammates });
+
+        if (lastSuccessfulData) {
+            const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
+            socket.emit('locationUpdate', userData);
         }
     });
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     socket.on('update_notification_settings', (settings) => {
         console.log(`[${socket.data.username}] updated notification settings:`, settings);
