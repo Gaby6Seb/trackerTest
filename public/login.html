@@ -130,14 +130,14 @@
             localStorage.setItem('canSeeAllPlayers', data.canSeeAllPlayers);
             localStorage.setItem('canSeeLastKnownLocation', data.canSeeLastKnownLocation);
             localStorage.setItem('canUseNotifications', data.canUseNotifications); // <-- NEW
-            // Also store the token if it exists
+            
             if (data.token) {
                 localStorage.setItem('authToken', data.token);
             }
             window.location.href = '/dashboard.html';
         }
 
-        // --- NEW: Auto-login with token on page load ---
+        // --- Auto-login with token on page load ---
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('authToken');
             if (token) {
@@ -156,7 +156,6 @@
                         const data = await res.json();
                         completeLogin(data);
                     } else {
-                        // Token is invalid or expired
                         localStorage.removeItem('authToken');
                         loginBox.style.display = 'block';
                         statusBox.style.display = 'none';
