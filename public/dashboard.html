@@ -1,749 +1,626 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require("socket.io");
-const path = require('path');
-const axios = require('axios');
-const fs = require('fs');
-const crypto = require('crypto');
-const OneSignal = require('@onesignal/node-onesignal'); // <-- Add OneSignal SDK
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splashin' Live Dashboard</title>
 
-// --- OneSignal Configuration ---
-const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
-const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
 
-let oneSignalClient = null;
-if (ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY) {
-    const configuration = OneSignal.createConfiguration({
-        authMethods: {
-            app_key: {
-                tokenProvider: {
-                    getToken() {
-                        return ONESIGNAL_REST_API_KEY;
-                    }
-                }
-            }
-        }
-    });
-    oneSignalClient = new OneSignal.DefaultApi(configuration);
-    console.log("OneSignal client configured successfully.");
-} else {
-    console.warn("OneSignal environment variables not set. Push notifications will be disabled.");
-}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+  <!-- OneSignal SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+        <h1>Splashin' Live Dashboard</h1>
+        <p class="subtitle">Connecting...</p>
+    </div>
+    <div class="user-info">
+        <button id="notification-btn" style="display: none;">🔔</button>
+        <span id="display-name"></span>
+        <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="controls-container">
+    <div id="search-container">
+        <input type="text" id="player-search" placeholder="Search names or teams (e.g., John, Blue Team)...">
+        <button id="clear-search-btn">&times;</button>
+    </div>
+    <div id="filter-toggles">
+      <label for="show-all-toggle">
+        <input type="checkbox" id="show-all-toggle">
+        Show All Players
+      </label>
+    </div>
+    <div id="safezone-container" class="minimized">
+        <h2 id="safezone-header">
+            Players in Safe Zone
+            <span id="safezone-toggle-icon">+</span>
+        </h2>
+        <ul id="safezone-list"></ul>
+    </div>
+    <div id="stealth-container" class="minimized">
+        <h2 id="stealth-header">
+            Stealthed Players
+            <span id="stealth-toggle-icon">+</span>
+        </h2>
+        <ul id="stealth-list"></ul>
+    </div>
+    <div id="not-located-container" class="minimized">
+        <h2 id="not-located-header">
+            Players Not on Map
+            <span id="toggle-icon">+</span>
+        </h2>
+        <ul id="not-located-list"></ul>
+    </div>
+  </div>
 
-// --- Load Login Configurations ---
-const LOGINS_FILE = path.join(__dirname, 'logins.json');
-let loginConfigs = {};
-
-// Try to load from environment variable first (for Railway)
-if (process.env.LOGINS_JSON) {
-    try {
-        loginConfigs = JSON.parse(process.env.LOGINS_JSON);
-        console.log(`Loaded ${Object.keys(loginConfigs).length} login configurations from environment variable.`);
-    } catch (err) {
-        console.error("FATAL ERROR: Could not parse LOGINS_JSON environment variable.", err);
-        process.exit(1);
-    }
-}
-// Fallback to local file (for local development)
-else {
-    try {
-        loginConfigs = JSON.parse(fs.readFileSync(LOGINS_FILE, 'utf8'));
-        console.log(`Loaded ${Object.keys(loginConfigs).length} login configurations from local logins.json file.`);
-    } catch (err) {
-        console.error("FATAL ERROR: Could not read logins.json file. Make sure it exists or LOGINS_JSON env var is set.", err);
-        process.exit(1);
-    }
-}
-
-// --- NEW: Persistent Token Management ---
-const TOKEN_FILE = path.join(__dirname, 'persistent_tokens.json');
-let persistentTokens = new Map(); // token -> { username, expiresAt }
-
-function saveTokensToFile() {
-    const array = Array.from(persistentTokens.entries());
-    fs.writeFile(TOKEN_FILE, JSON.stringify(array), 'utf8', (err) => {
-        if (err) console.error("Error saving persistent tokens:", err);
-    });
-}
-
-function loadTokensFromFile() {
-    try {
-        if (fs.existsSync(TOKEN_FILE)) {
-            const data = fs.readFileSync(TOKEN_FILE, 'utf8');
-            const array = JSON.parse(data);
-            persistentTokens = new Map(array);
-            // Prune expired tokens on load
-            const now = new Date();
-            let prunedCount = 0;
-            persistentTokens.forEach((value, key) => {
-                if (new Date(value.expiresAt) < now) {
-                    persistentTokens.delete(key);
-                    prunedCount++;
-                }
-            });
-            if (prunedCount > 0) {
-                console.log(`Pruned ${prunedCount} expired tokens.`);
-                saveTokensToFile();
-            }
-            console.log(`Loaded ${persistentTokens.size} persistent tokens.`);
-        }
-    } catch (err) {
-        console.error("Error reading persistent tokens file:", err);
-    }
-}
-
-// --- Server Setup ---
-const app = express();
-app.use(express.json());
-app.use((req, res, next) => {
-    const proto = req.headers['x-forwarded-proto'];
-    if (process.env.NODE_ENV === 'production' && proto !== 'https') {
-        res.redirect(301, `https://${req.hostname}${req.url}`);
-        return;
-    }
-    next();
-});
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
-
-// --- Helper function for distance calculation ---
-function calculateDistanceMiles(lat1, lon1, lat2, lon2) {
-    const R = 3958.8; // Radius of the Earth in miles
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-// --- UPDATED: Login Endpoint ---
-app.post('/login', (req, res) => {
-    const { username, password, rememberMe } = req.body;
-    const userConfig = loginConfigs[username];
-
-    if (userConfig && userConfig.password === password) {
-        let token = null;
-        if (rememberMe) {
-            token = crypto.randomBytes(32).toString('hex');
-            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-            persistentTokens.set(token, { username, expiresAt });
-            saveTokensToFile();
-            console.log(`Generated new persistent token for user: ${username}`);
-        }
-
-        const isMaster = !!userConfig.isMaster;
-
-        res.json({
-            token: token,
-            username: username,
-            isMaster: isMaster,
-            displayName: userConfig.displayName,
-            // A master can automatically do everything
-            canSeeAllPlayers: isMaster || !!userConfig.canSeeAllPlayers,
-            canSeeLastKnownLocation: isMaster || !!userConfig.canSeeLastKnownLocation,
-            canUseNotifications: isMaster || !!userConfig.canUseNotifications
-        });
-
-    } else {
-        res.status(401).json({ message: 'Invalid credentials' });
-    }
-});
-
-// --- UPDATED: Token Login Endpoint ---
-app.post('/token-login', (req, res) => {
-    const { token } = req.body;
-    if (!token) {
-        return res.status(400).json({ message: 'Token is required' });
-    }
-
-    const tokenData = persistentTokens.get(token);
-
-    if (tokenData && new Date(tokenData.expiresAt) > new Date()) {
-        const userConfig = loginConfigs[tokenData.username];
-        if (userConfig) {
-            console.log(`User ${tokenData.username} logged in via token.`);
-            const isMaster = !!userConfig.isMaster;
-            res.json({
-                username: tokenData.username,
-                isMaster: isMaster,
-                displayName: userConfig.displayName,
-                // A master can automatically do everything
-                canSeeAllPlayers: isMaster || !!userConfig.canSeeAllPlayers,
-                canSeeLastKnownLocation: isMaster || !!userConfig.canSeeLastKnownLocation,
-                canUseNotifications: isMaster || !!userConfig.canUseNotifications
-            });
-        } else {
-            // User may have been deleted from logins.json
-            persistentTokens.delete(token);
-            saveTokensToFile();
-            res.status(401).json({ message: 'User no longer exists' });
-        }
-    } else {
-        if (tokenData) { // Token expired
-            persistentTokens.delete(token);
-            saveTokensToFile();
-        }
-        res.status(401).json({ message: 'Invalid or expired token' });
-    }
-});
-
-// --- NEW: Logout Endpoint ---
-app.post('/logout', (req, res) => {
-    const { token } = req.body;
-    if (token && persistentTokens.has(token)) {
-        persistentTokens.delete(token);
-        saveTokensToFile();
-        console.log(`Invalidated persistent token.`);
-    }
-    res.status(200).json({ message: 'Logged out successfully' });
-});
-
-// --- API Configuration ---
-const SUPABASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co";
-const SPLASHIN_API_URL = "https://splashin.app/api/v3";
-const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyc3B2c2Rmd2FxanR1aHltdWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODM1ODY0MjcsImV4cCI6MTk5OTE2MjQyN30.2AItrHcB7A5bSZ_dfd455kvLL8fXLL7IrfMBoFmkGww";
-const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
-const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
-const authData = {
-    email: process.env.API_EMAIL,
-    password: process.env.API_PASSWORD,
-    goture_meta_security: {},
-};
-
-// --- State Management ---
-let isFetching = false;
-let lastSuccessfulData = null;
-let lastRichDataMap = new Map(); // <-- Keep track of all players
-let masterTeamId = null;
-const FETCH_INTERVAL_MS = 10000;
-const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
-let playerLastKnownLocationMap = new Map();
-let previousPlayerStatusMap = new Map();
-const stealthExpirationMap = new Map();
-const STEALTH_REFETCH_INTERVAL_MS = 2 * 60 * 1000;
-
-function saveMapToFile() {
-    const array = Array.from(playerLastKnownLocationMap.entries());
-    fs.writeFile(LOCATION_MEMORY_FILE, JSON.stringify(array), 'utf8', (err) => {
-        if (err) console.error("Error saving location memory:", err);
-    });
-}
-
-function loadMapFromFile() {
-    try {
-        if (fs.existsSync(LOCATION_MEMORY_FILE)) {
-            const data = fs.readFileSync(LOCATION_MEMORY_FILE, 'utf8');
-            const array = JSON.parse(data);
-            playerLastKnownLocationMap = new Map(array);
-            console.log(`Loaded ${playerLastKnownLocationMap.size} locations from memory.`);
-        }
-    } catch (err) {
-        console.error("Error reading location memory file:", err);
-    }
-}
-
-// --- Data Filtering & Resolution Logic ---
-function filterDataForUser(fullData, userFilterConfig) {
-    // Master users see everything, no filtering needed.
-    if (userFilterConfig.isMaster) {
-        return fullData;
-    }
-
-    const myTeamId = userFilterConfig.myTeamId;
-    const targetTeamIds = userFilterConfig.targetTeamIds || new Set();
-    const allowedTeamIds = new Set([myTeamId, ...targetTeamIds]);
-    const shouldFilterByTeam = !userFilterConfig.canSeeAllPlayers;
-
-    const processPlayers = (players) => {
-        if (!players) return [];
-        let processed = players;
-
-        // Step 1: Filter by team visibility if the user doesn't have "see all" permission
-        if (shouldFilterByTeam) {
-            processed = processed.filter(p => allowedTeamIds.has(p.teamId));
-        }
-
-        // Step 2: Map roles (teammate, target, neutral) to all visible players
-        return processed.map(p => {
-            let role = 'neutral';
-            if (p.teamId === myTeamId) {
-                role = 'teammate';
-            } else if (targetTeamIds.has(p.teamId)) {
-                role = 'target';
-            }
-            return { ...p, role };
-        });
-    };
-
-    const result = {
-        located: processPlayers(fullData.located),
-        notLocated: processPlayers(fullData.notLocated),
-        stealthed: processPlayers(fullData.stealthed),
-        safeZone: processPlayers(fullData.safeZone),
-    };
-
-    // Step 3: If the user lacks permission, remove last known location from stealthed/safezone players
-    if (!userFilterConfig.canSeeLastKnownLocation) {
-        const stripCoords = (player) => {
-            const { lat, lng, ...rest } = player;
-            return rest;
-        };
-        result.stealthed = result.stealthed.map(stripCoords);
-        result.safeZone = result.safeZone.map(stripCoords);
-    }
-
-    return result;
-}
-
-async function resolveReferenceLogin(loginDetails) {
-    console.log(`Attempting to resolve team/target info for login: ${loginDetails.email}`);
-    try {
-        const authHeaders = { "Apikey": API_KEY };
-        const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
-        const refAuthData = { ...loginDetails, goture_meta_security: {} };
-        const authResponse = await axios.post(authUrl, refAuthData, { headers: authHeaders });
-        const accessToken = authResponse.data.access_token;
-        const bearerToken = `Bearer ${accessToken}`;
-        const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken };
-
-        const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
-        const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
-
-        if (!dashboardResponse.data || !dashboardResponse.data.myTeam) {
-            throw new Error("Dashboard response did not contain team information.");
-        }
-
-        const myTeamId = dashboardResponse.data.myTeam.length > 0 ? dashboardResponse.data.myTeam[0].team_id : null;
-        if (!myTeamId) throw new Error("Could not determine team ID from dashboard.");
-
-        const targetTeamIds = new Set();
-        if (dashboardResponse.data.targets) {
-            dashboardResponse.data.targets.forEach(target => {
-                if (target.team_id) targetTeamIds.add(target.team_id);
-            });
-        }
-
-        console.log(`Successfully resolved login ${loginDetails.email}: Team ID ${myTeamId}, Targets ${[...targetTeamIds].join(', ')}`);
-        return { myTeamId, targetTeamIds };
-
-    } catch (error) {
-        console.error(`Failed to resolve reference login for ${loginDetails.email}:`, error.message);
-        if (error.response) console.error("API Response:", error.response.data);
-        return null;
-    }
-}
-
-// --- UPDATED: Notification Processing Logic ---
-async function sendPushNotification(playerIds, heading, content) {
-    if (!oneSignalClient || playerIds.length === 0) return;
-
-    const notification = {
-        app_id: ONESIGNAL_APP_ID,
-        include_player_ids: playerIds,
-        headings: { en: heading },
-        contents: { en: content },
-        // You can add more options here, like icons, urls, etc.
-    };
-
-    try {
-        console.log(`Sending push notification to ${playerIds.length} player(s)...`);
-        const response = await oneSignalClient.createNotification(notification);
-        console.log("OneSignal push sent successfully:", response.id);
-    } catch (e) {
-        console.error("Error sending OneSignal push notification:", e.body);
-    }
-}
-
-function processNotifications(fullData) {
-    const newPlayerStatusMap = new Map();
-    const allPlayersWithLocation = new Map();
-
-    // Consolidate all players and their current status/location
-    [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
-        if (p.lat && p.lng) {
-            allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
-        }
-        if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
-        else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
-        else newPlayerStatusMap.set(p.u, 'located');
-    });
-    fullData.notLocated.forEach(p => newPlayerStatusMap.set(p.u, 'notLocated'));
-
-    io.sockets.sockets.forEach(socket => {
-        const settings = socket.data.notificationSettings;
-        if (!settings || !settings.enabled) return;
-
-        // Skip proximity for users who don't have a specific player ID (e.g., master users)
-        if (settings.myPlayerId) {
-            const myPlayerLocation = allPlayersWithLocation.get(settings.myPlayerId);
-            if (!myPlayerLocation) return;
-
-            const previouslyInRange = socket.data.playersInRange || new Set();
-            const currentlyInRange = new Set();
-
-            if (settings.proximityMiles > 0) {
-                for (const otherPlayer of fullData.located) {
-                    if (otherPlayer.u === settings.myPlayerId) continue;
-
-                    const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
-                    if (distance <= settings.proximityMiles) {
-                        currentlyInRange.add(otherPlayer.u);
-                        if (!previouslyInRange.has(otherPlayer.u)) {
-                            // In-app alert
-                            socket.emit('proximity_alert', {
-                                type: 'proximity',
-                                player: {
-                                    name: `${otherPlayer.firstName} ${otherPlayer.lastName}`,
-                                    teamName: otherPlayer.teamName,
-                                },
-                                distance: distance.toFixed(2)
-                            });
-                            // Push notification
-                            const oneSignalPlayerId = socket.data.oneSignalPlayerId;
-                            if (oneSignalPlayerId) {
-                                sendPushNotification(
-                                    [oneSignalPlayerId],
-                                    'Proximity Alert!',
-                                    `${otherPlayer.firstName} ${otherPlayer.lastName} (${otherPlayer.teamName}) is now within ${distance.toFixed(2)} miles of you.`
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            socket.data.playersInRange = currentlyInRange;
-        }
-
-
-        // Ghost Alerts (can work for master users too)
-        newPlayerStatusMap.forEach((currentStatus, playerId) => {
-            if (settings.myPlayerId && playerId === settings.myPlayerId) return;
-
-            const previousStatus = previousPlayerStatusMap.get(playerId) || 'unknown';
-            const justWentGhost = (previousStatus === 'located') && (currentStatus === 'stealthed' || currentStatus === 'notLocated');
-
-            if (justWentGhost) {
-                const ghostPlayerInfo = lastRichDataMap.get(playerId);
-                const ghostLastLocation = playerLastKnownLocationMap.get(playerId);
-                if (!ghostPlayerInfo || !ghostLastLocation) return;
-
-                let isInRange = false;
-                if (settings.ghostMiles === -1) { // -1 signifies worldwide (for master or user choice)
-                    isInRange = true;
-                } else if (settings.ghostMiles > 0) {
-                    const myPlayerLocation = allPlayersWithLocation.get(settings.myPlayerId);
-                    if (myPlayerLocation) {
-                        const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
-                        if (distance <= settings.ghostMiles) {
-                            isInRange = true;
-                        }
-                    }
-                }
-
-                if (isInRange) {
-                    // In-app alert
-                    socket.emit('ghost_alert', {
-                        type: 'ghost',
-                        player: {
-                            name: `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name}`,
-                            teamName: ghostPlayerInfo.team_name
-                        }
-                    });
-                     // Push notification
-                    const oneSignalPlayerId = socket.data.oneSignalPlayerId;
-                    if (oneSignalPlayerId) {
-                         sendPushNotification(
-                            [oneSignalPlayerId],
-                            'Ghost Alert!',
-                            `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name} (${ghostPlayerInfo.team_name}) just went off the grid.`
-                        );
-                    }
-                }
-            }
-        });
-    });
-
-    // Update the global previous status map for the next cycle
-    previousPlayerStatusMap = new Map(newPlayerStatusMap.entries());
-}
-
-
-// --- The Core API Fetching Logic ---
-async function runApiRequests() {
-    if (isFetching) { return; }
-
-    try {
-        isFetching = true;
-        console.log("--- Starting API Request Cycle ---");
-
-        const authHeaders = { "Apikey": API_KEY };
-        const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
-        const authResponse = await axios.post(authUrl, authData, { headers: authHeaders });
-        const accessToken = authResponse.data.access_token;
-        const bearerToken = `Bearer ${accessToken}`;
-        const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
-
-        const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
-        const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
-        const richDataMap = new Map();
-        const targets = dashboardResponse.data.targets || [];
-        const myTeam = dashboardResponse.data.myTeam || [];
+  <!-- Notification Modal -->
+  <div id="notification-modal-overlay" class="modal-overlay" style="display: none;">
+    <div id="notification-modal" class="modal-content">
+        <button id="modal-close-btn" class="modal-close-btn">&times;</button>
         
-        if (myTeam.length > 0 && myTeam[0].team_id) {
-            masterTeamId = myTeam[0].team_id;
-        }
+        <div id="player-selection-step">
+            <h2>Who are you?</h2>
+            <p>Select your name from the list to enable notifications.</p>
+            <ul id="teammate-list">
+            </ul>
+        </div>
+        
+        <div id="notification-settings-step" style="display: none;">
+            <h2>Notification Settings for <span id="my-player-name"></span></h2>
+            <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
+            
+            <div class="setting-row master-toggle">
+                <label>Manage Subscription</label>
+                <div class='onesignal-customlink-container'></div>
+            </div>
 
-        if (dashboardResponse.data.currentPlayer) richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
-        targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
-        myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
+            <div class="setting-row master-toggle">
+                <label for="enable-notifications">Enable Alert Preferences</label>
+                <input type="checkbox" id="enable-notifications" class="toggle-switch">
+            </div>
 
-        let currentCursor = 0;
-        let hasMorePages = true;
-        while (hasMorePages) {
-            const playersUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/players?cursor=${currentCursor}&filter=all&sort=alphabetical&group=team`;
-            const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
-            const pageData = playersResponse.data;
-            if (pageData && pageData.teams && pageData.teams.length > 0) {
-                pageData.teams.flatMap(team => team.players || []).forEach(p => {
-                    if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
-                });
-                currentCursor++;
-            } else {
-                hasMorePages = false;
-            }
-        }
-        console.log(`Total unique players in roster: ${richDataMap.size}`);
-        lastRichDataMap = richDataMap; // Store for notification system
+            <fieldset id="notification-fieldset">
+                <div class="setting-row">
+                    <label for="proximity-radius">Proximity Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="proximity-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="proximity-value">Off</span>
+                    </div>
+                </div>
 
-        const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
-        const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
-        const locationResults = locationResponse.data;
+                <div class="setting-row">
+                    <label for="ghost-radius">"Ghost" Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="ghost-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="ghost-value">Off</span>
+                    </div>
+                    <label class="sub-label">
+                      <input type="checkbox" id="ghost-worldwide"> No Range Limit (Worldwide)
+                    </label>
+                </div>
+            </fieldset>
+            
+            <button id="save-settings-btn">Save Alert Preferences</button>
+        </div>
+    </div>
+  </div>
 
-        const targetIds = new Set(targets.map(p => p.id).filter(Boolean));
-        const teammateIds = new Set(myTeam.map(p => p.id).filter(Boolean));
-        const locatedPlayers = [], notLocatedPlayers = [], stealthedPlayers = [], safeZonePanelList = [];
-        let mapWasUpdated = false;
 
-        locationResults.forEach(locData => {
-            const richData = richDataMap.get(locData.u);
-            if (!richData) { return; }
-
-            const lat = parseFloat(locData.l);
-            const lng = parseFloat(locData.lo);
-            const hasCoords = !isNaN(lat) && !isNaN(lng);
-
-            if (hasCoords) {
-                playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
-                mapWasUpdated = true;
-            }
-
-            let role = 'neutral';
-            if (targetIds.has(locData.u)) role = 'target';
-            else if (teammateIds.has(locData.u)) role = 'teammate';
-
-            const playerInfo = {
-                u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role: role, teamId: richData.team_id
-            };
-
-            const isSafe = richData.is_safe || locData.isz;
-            const isStealth = (locData.l === null && locData.a === null) && !isSafe;
-
-            if (isSafe || isStealth) {
-                const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-                if (isSafe) {
-                    safeZonePanelList.push({ ...playerWithLastKnownCoords, isSafeZone: true });
-                } else {
-                    stealthedPlayers.push({ ...playerWithLastKnownCoords, isSafeZone: false });
+<script>
+    // --- OneSignal Initialization ---
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(function(OneSignal) {
+        OneSignal.init({
+            appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
+            allowLocalhostAsSecureOrigin: true,
+            promptOptions: {
+                customlink: {
+                    enabled: true,
+                    style: "button",
+                    size: "medium",
+                    text: {
+                        "subscribe-button": "Subscribe to Push Notifications",
+                        "unsubscribe-button": "Unsubscribe from Push Notifications",
+                    },
                 }
-            } else if (hasCoords) {
-                locatedPlayers.push({
-                    ...playerInfo, lat, lng,
-                    status: locData.a, speed: parseFloat(locData.s || '0'), batteryLevel: parseFloat(locData.bl || '0'), isCharging: locData.ic, updatedAt: locData.up, accuracy: parseFloat(locData.ac || '0'), isSafeZone: false
-                });
-            } else {
-                notLocatedPlayers.push({ ...playerInfo, reason: 'No location data available' });
             }
-        });
-
-        if (mapWasUpdated) { saveMapToFile(); }
-
-        const currentStealthedIds = new Set(stealthedPlayers.map(p => p.u));
-        for (const player of stealthedPlayers) {
-            const existingEntry = stealthExpirationMap.get(player.u);
-            const shouldFetch = !existingEntry || (Date.now() - existingEntry.fetchedAt > STEALTH_REFETCH_INTERVAL_MS);
-            if (shouldFetch) {
-                try {
-                    console.log(`Fetching stealth expiration for ${player.firstName}...`);
-                    const fullUserDataUrl = `${SUPABASE_URL}/rest/v1/rpc/get_map_user_full_v2`;
-                    const response = await axios.post(fullUserDataUrl, { gid: GAME_ID, uid: player.u }, { headers: commonHeaders });
-                    if (response.data && response.data.ive) {
-                        stealthExpirationMap.set(player.u, { expiresAt: response.data.ive, fetchedAt: Date.now() });
+        }).then(() => {
+            console.log("OneSignal SDK Initialized.");
+            OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
+                if (isSubscribed) {
+                    const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
+                    if (oneSignalPlayerId) {
+                        socket.emit('register_one_signal', oneSignalPlayerId);
+                        console.log('Registered for push notifications with ID:', oneSignalPlayerId);
                     }
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                } catch (err) {
-                    console.error(`Failed to fetch stealth data for ${player.u}:`, err.message);
                 }
-            }
-        }
-        for (const uid of stealthExpirationMap.keys()) {
-            if (!currentStealthedIds.has(uid)) {
-                stealthExpirationMap.delete(uid);
-                console.log(`Player ${uid} is no longer stealthed, removed from timer map.`);
-            }
-        }
-        const stealthedPlayersWithTimers = stealthedPlayers.map(player => {
-            const expirationData = stealthExpirationMap.get(player.u);
-            return { ...player, stealthExpiresAt: expirationData ? expirationData.expiresAt : null };
+            });
         });
+    });
 
-        const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayersWithTimers, safeZone: safeZonePanelList };
-        lastSuccessfulData = dataToEmit;
+    // --- Login Authentication Guard ---
+    const username = localStorage.getItem('username');
+    const isMaster = localStorage.getItem('isMaster') === 'true';
+    const displayName = localStorage.getItem('displayName');
+    const canSeeAllPlayers = localStorage.getItem('canSeeAllPlayers') === 'true';
+    const canSeeLastKnownLocation = localStorage.getItem('canSeeLastKnownLocation') === 'true';
+    const canUseNotifications = localStorage.getItem('canUseNotifications') === 'true';
 
-        io.sockets.sockets.forEach(socket => {
-            if (socket.data.filterConfig) {
-                const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
-                socket.emit('locationUpdate', userData);
-            }
-        });
-
-        processNotifications(lastSuccessfulData);
-
-        console.log(`Broadcasted filtered data to ${io.engine.clientsCount} clients.`);
-        console.log("--- End API Request Cycle ---");
-
-    } catch (error) {
-        console.error("API Error during runApiRequests:", error.message);
-        if (error.response) { console.error("Status:", error.response.status, "Data:", JSON.stringify(error.response.data)); }
-    } finally {
-        isFetching = false;
+    if (!username) {
+        window.location.href = '/'; // Redirect to login page if not authenticated
     }
-}
 
-// --- Connection and Server Start ---
-io.on('connection', (socket) => {
-    console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('display-name').textContent = displayName || username;
+        
+        if (isMaster || canSeeAllPlayers) {
+            document.getElementById('filter-toggles').style.display = 'flex';
+        } else {
+            document.getElementById('filter-toggles').style.display = 'none';
+        }
 
-    socket.on('authenticate', async (data) => {
-        const username = data.username;
-        const userConfig = loginConfigs[username];
+        if (canUseNotifications) {
+            document.getElementById('notification-btn').style.display = 'block';
+        }
 
-        if (userConfig) {
-            socket.data.username = username;
-            console.log(`Socket ${socket.id} authenticated as user: ${username}`);
-
-            let filterConfig;
-            let teammates = [];
-
-            if (userConfig.isMaster) {
-                filterConfig = { 
-                    isMaster: true,
-                    canSeeAllPlayers: true,
-                    canSeeLastKnownLocation: true
-                };
-                
-                if (userConfig.canUseNotifications && masterTeamId && lastRichDataMap.size > 0) {
-                    console.log(`[${username}] Populating teammates for master user using team ID: ${masterTeamId}`);
-                    for (const player of lastRichDataMap.values()) {
-                        if (player.team_id === masterTeamId) {
-                            teammates.push({
-                                id: player.id,
-                                name: `${player.first_name} ${player.last_name}`.trim()
-                            });
-                        }
-                    }
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            const token = localStorage.getItem('authToken');
+            
+            if (token) {
+                try {
+                    await fetch('/logout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+                } catch (err) {
+                    console.error("Failed to notify server of logout:", err);
                 }
+            }
+            
+            localStorage.clear();
+            socket.disconnect();
+            window.location.href = '/';
+        });
+    });
 
-            } else if (userConfig.team_id || userConfig.reference_login) {
-                let resolvedIds = null;
-                if (userConfig.reference_login) {
-                    console.log(`[${username}] Using reference login to resolve team info...`);
-                    resolvedIds = await resolveReferenceLogin(userConfig.reference_login);
-                } else {
-                     console.log(`[${username}] Using direct ID configuration.`);
-                     resolvedIds = { myTeamId: userConfig.team_id, targetTeamIds: new Set(userConfig.target_team_ids || []) };
-                }
+    const map = L.map('map').setView([33.04, -97.02], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
 
-                if (resolvedIds) {
-                    filterConfig = {
-                        isMaster: false,
-                        myTeamId: resolvedIds.myTeamId,
-                        targetTeamIds: resolvedIds.targetTeamIds,
-                        canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
-                        canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
-                    };
-                    if (userConfig.canUseNotifications && lastRichDataMap.size > 0) {
-                        for (const player of lastRichDataMap.values()) {
-                            if (player.team_id === resolvedIds.myTeamId) {
-                                teammates.push({
-                                    id: player.id,
-                                    name: `${player.first_name} ${player.last_name}`.trim()
-                                });
-                            }
-                        }
-                    }
-                } else {
-                    console.error(`[${username}] Could not resolve team info. Disconnecting.`);
-                    socket.emit('auth_error', 'Could not resolve team info.');
-                    socket.disconnect();
+    const markers = L.markerClusterGroup({
+        maxClusterRadius: 60, disableClusteringAtZoom: 14, 
+        chunkedLoading: true, spiderfyOnMaxZoom: true 
+    });
+    map.addLayer(markers); 
+
+    const socket = io();
+    let currentMarkers = {}; 
+    let allPlayersWithLocation = [];
+    let allPanelData = {};
+    let showAllPlayers = false;
+    let initialMapLoad = true;
+    let timerUpdateInterval = null;
+
+    const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => {
+      const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
+      const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
+      const stealthedClass = isStealthed ? 'stealthed-marker' : '';
+      const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
+      const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
+      let pinStyles = `background-color: ${color || '#3388ff'};`;
+      if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
+      const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
+      const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
+      const iconSize = avatarUrl ? [40, 52] : [30, 42];
+      const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
+      return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
+    };
+    
+    function startTimerUpdates() {
+        if (timerUpdateInterval) clearInterval(timerUpdateInterval);
+
+        timerUpdateInterval = setInterval(() => {
+            const timerElements = document.querySelectorAll('.stealth-timer');
+            if (timerElements.length === 0) {
+                clearInterval(timerUpdateInterval);
+                timerUpdateInterval = null;
+                return;
+            }
+            timerElements.forEach(el => {
+                const expiresAt = el.dataset.expiresAt;
+                if (!expiresAt) {
+                    el.textContent = '';
                     return;
                 }
-            } else {
-                 console.error(`[${username}] Login config is invalid. Disconnecting.`);
-                 socket.emit('auth_error', 'Server configuration for this user is invalid.');
-                 socket.disconnect();
-                 return;
-            }
-
-            socket.data.filterConfig = filterConfig;
-
-            // FIX: Removed the obsolete and confusing `isMasterNotifier` flag. The client now
-            // correctly handles the initialization based on the presence of the `teammates` array.
-            socket.emit('auth_success', {
-                teammates: teammates
+                const remainingMs = new Date(expiresAt) - new Date();
+                if (remainingMs <= 0) {
+                    el.textContent = ' (Expired)';
+                } else {
+                    const totalSeconds = Math.floor(remainingMs / 1000);
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    el.textContent = ` (${minutes}:${seconds.toString().padStart(2, '0')} left)`;
+                }
             });
+        }, 1000);
+    }
 
-            if (lastSuccessfulData) {
-                const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
-                socket.emit('locationUpdate', userData);
-            }
-
-        } else {
-            console.log(`Socket ${socket.id} failed authentication for user: ${username}.`);
-            socket.disconnect();
-        }
+    socket.on('connect', () => {
+        document.querySelector('.subtitle').textContent = 'Authenticating...';
+        socket.emit('authenticate', { username });
     });
 
-    socket.on('update_notification_settings', (settings) => {
-        console.log(`[${socket.data.username}] updated notification settings:`, settings);
-        socket.data.notificationSettings = settings;
-        socket.data.playersInRange = new Set(); // Reset in-range players on setting change
+    socket.on('auth_error', (message) => {
+        alert(`Authentication Error: ${message}`);
+        localStorage.clear();
+        window.location.href = '/';
     });
     
-    // --- NEW: Listen for OneSignal Player ID registration ---
-    socket.on('register_one_signal', (oneSignalPlayerId) => {
-        if (oneSignalPlayerId) {
-            socket.data.oneSignalPlayerId = oneSignalPlayerId;
-            console.log(`[${socket.data.username || socket.id}] registered for push notifications with ID: ${oneSignalPlayerId}`);
+    socket.on('auth_success', (data) => {
+        // FIX: This condition was too strict, preventing the notification modal from being set up
+        // if the teammate list was empty (e.g., on initial load). By checking for the existence
+        // of the `teammates` array, we ensure the modal is always configured for users
+        // with notification permissions.
+        if (data.teammates) {
+            setupNotificationModal(data.teammates);
         }
     });
 
-    socket.on('disconnect', () => {
-        console.log(`User ${socket.data.username || 'unauthenticated'} disconnected. Total clients: ${io.engine.clientsCount}`);
-    });
-});
+    socket.on('locationUpdate', (data) => {
+      document.querySelector('.subtitle').textContent = 'Live';
+      allPlayersWithLocation = [
+          ...data.located.map(p => ({ ...p, statusType: 'located' })),
+          ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
+          ...data.stealthed.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'stealthed' })),
+      ];
+      allPanelData = data;
 
-server.listen(PORT, () => {
-    console.log(`Server listening on http://localhost:${PORT}`);
-    loadMapFromFile();
-    loadTokensFromFile();
-    console.log("Starting continuous API fetch interval.");
-    runApiRequests();
-    setInterval(runApiRequests, FETCH_INTERVAL_MS);
-});
+      const populateList = (containerId, listId, players, reasonKey) => {
+          const container = document.getElementById(containerId);
+          const list = document.getElementById(listId);
+          list.innerHTML = '';
+          if (players && players.length > 0) {
+              players.sort((a, b) => a.firstName.localeCompare(b.firstName)).forEach(player => {
+                  const listItem = document.createElement('li');
+                  listItem.dataset.uid = player.u;
+                  let details = reasonKey && player[reasonKey] ? ` - ${player[reasonKey]}` : '';
+
+                  if (player.lat && player.lng) {
+                      listItem.classList.add('clickable-list-item');
+                      listItem.onclick = () => panToLastLocation(player.lat, player.lng);
+                  }
+                  
+                  let timerHtml = '';
+                  if (containerId === 'stealth-container' && player.stealthExpiresAt) {
+                      timerHtml = `<span class="stealth-timer" data-expires-at="${player.stealthExpiresAt}"></span>`;
+                  }
+
+                  listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${timerHtml}`;
+                  list.appendChild(listItem);
+              });
+              container.style.display = 'flex';
+          } else {
+              container.style.display = 'none';
+          }
+      };
+
+      populateList('safezone-container', 'safezone-list', data.safeZone);
+      populateList('stealth-container', 'stealth-list', data.stealthed);
+      populateList('not-located-container', 'not-located-list', data.notLocated, 'reason');
+      
+      startTimerUpdates();
+
+      filterMarkers(document.getElementById('player-search').value, initialMapLoad);
+      if (initialMapLoad) initialMapLoad = false;
+    });
+    
+    socket.on('proximity_alert', (data) => {
+        console.log('Proximity Alert (Push Sent by Server):', data);
+    });
+
+    socket.on('ghost_alert', (data) => {
+        console.log('Ghost Alert (Push Sent by Server):', data);
+    });
+
+    function panToLastLocation(lat, lng) {
+        map.setView([lat, lng], 17);
+    }
+
+    function expandPanel(containerId) {
+        const container = document.getElementById(containerId);
+        if (container && container.classList.contains('minimized')) {
+            container.classList.remove('minimized');
+            const icon = container.querySelector('h2 span');
+            if (icon) icon.textContent = '-';
+        }
+    }
+
+    function findAndExpandList(searchTerm) {
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
+        const listsToSearch = [
+            { data: allPanelData.safeZone, containerId: 'safezone-container' },
+            { data: allPanelData.stealthed, containerId: 'stealth-container' },
+            { data: allPanelData.notLocated, containerId: 'not-located-container' }
+        ];
+        for (const listInfo of listsToSearch) {
+            if (listInfo.data) {
+                const foundPlayer = listInfo.data.find(p => 
+                    (`${p.firstName || ''} ${p.lastName || ''}`.toLowerCase().includes(lowerCaseSearchTerm)) ||
+                    ((p.teamName || '').toLowerCase().includes(lowerCaseSearchTerm))
+                );
+                if (foundPlayer) {
+                    expandPanel(listInfo.containerId);
+                    const listItem = document.querySelector(`li[data-uid="${foundPlayer.u}"]`);
+                    if(listItem) {
+                        listItem.classList.add('highlighted');
+                        listItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    const searchInput = document.getElementById('player-search');
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+
+    searchInput.addEventListener('input', (e) => {
+        const hasText = e.target.value.length > 0;
+        clearSearchBtn.style.display = hasText ? 'block' : 'none';
+        filterMarkers(e.target.value, true);
+    });
+
+    clearSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        clearSearchBtn.style.display = 'none';
+        filterMarkers('', true);
+        searchInput.focus();
+    });
+
+    document.getElementById('show-all-toggle').addEventListener('change', (e) => {
+        showAllPlayers = e.target.checked;
+        filterMarkers(searchInput.value, true);
+    });
+
+    function getDirections(buttonElement) {
+        const url = `https://maps.google.com/?daddr=${buttonElement.dataset.lat},${buttonElement.dataset.lng}`;
+        window.open(url, '_blank');
+    }
+
+    function filterMarkers(searchTerm, shouldFitBounds = false) {
+        markers.clearLayers(); 
+        const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
+        const foundPlayerCoords = []; 
+        const updatedUids = new Set(); 
+        
+        allPlayersWithLocation.forEach(user => { 
+            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
+            
+            const isNeutral = role !== 'teammate' && role !== 'target';
+            const shouldDisplay = showAllPlayers || !isNeutral;
+            
+            if (!shouldDisplay) return;
+
+            const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
+            const fullTeamName = (teamName || '').toLowerCase();
+            
+            const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term));
+
+            if (isMatch) {
+                updatedUids.add(u);
+                foundPlayerCoords.push(L.latLng(lat, lng));
+                
+                let popupContent;
+                const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
+
+                if (isLastKnown) {
+                     popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`;
+                } else {
+                    const batteryIcon = isCharging ? '⚡' : '🔋';
+                    const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
+                    let roleLabel = '';
+                    if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
+                    else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
+                    popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body"><strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`;
+                }
+
+                const isStealthed = statusType === 'stealthed';
+				const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed);
+
+                if (currentMarkers[u]) {
+                  currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent);
+                } else {
+                  currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent);
+                }
+                markers.addLayer(currentMarkers[u]);
+            }
+        });
+
+        const currentlyTracked = markers.getLayers().length;
+        if (document.querySelector('.subtitle').textContent !== 'Connecting...' && document.querySelector('.subtitle').textContent !== 'Authenticating...') {
+            document.querySelector('.subtitle').textContent = `Tracking ${currentlyTracked} players on map.`;
+        }
+
+        if (markers.getLayers().length === 0 && searchTerms.length > 0) {
+            findAndExpandList(searchTerms[0]);
+        } else {
+            document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
+        }
+        
+        if (shouldFitBounds) {
+            if (searchTerms.length > 0 && foundPlayerCoords.length > 0) {
+                if (foundPlayerCoords.length > 1) {
+                    map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 });
+                } else {
+                    map.setView(foundPlayerCoords[0], 16);
+                }
+            } else {
+                const allVisibleCoords = allPlayersWithLocation
+                    .filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target')
+                    .map(p => L.latLng(p.lat, p.lng));
+                
+                if (allVisibleCoords.length > 0) {
+                    map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] });
+                }
+            }
+        }
+        
+        for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
+    }
+    
+    // --- CORRECTED: Simplified and fixed the notification modal setup ---
+    function setupNotificationModal(teammates) {
+        const modalOverlay = document.getElementById('notification-modal-overlay');
+        const openBtn = document.getElementById('notification-btn');
+        const closeBtn = document.getElementById('modal-close-btn');
+        const playerSelectionStep = document.getElementById('player-selection-step');
+        const settingsStep = document.getElementById('notification-settings-step');
+        const teammateList = document.getElementById('teammate-list');
+        const changePlayerLink = document.getElementById('change-player-link');
+        const saveBtn = document.getElementById('save-settings-btn');
+        const settingsTitle = settingsStep.querySelector('h2');
+        
+        teammateList.innerHTML = '';
+        if (teammates && teammates.length > 0) {
+            teammates.forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = player.name;
+                li.dataset.id = player.id;
+                li.onclick = () => {
+                    localStorage.setItem('myPlayerId', player.id);
+                    localStorage.setItem('myPlayerName', player.name);
+                    showUserSettings(player.name);
+                };
+                teammateList.appendChild(li);
+            });
+        } else {
+            playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.';
+        }
+
+
+        const showUserSettings = (playerName) => {
+            playerSelectionStep.style.display = 'none';
+            settingsStep.style.display = 'block';
+            settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
+            loadSettings();
+        };
+        
+        openBtn.onclick = () => {
+            modalOverlay.style.display = 'flex';
+            const myPlayerId = localStorage.getItem('myPlayerId');
+            const myPlayerName = localStorage.getItem('myPlayerName');
+            if (myPlayerId && myPlayerName) {
+                showUserSettings(myPlayerName);
+            } else {
+                playerSelectionStep.style.display = 'block';
+                settingsStep.style.display = 'none';
+            }
+        };
+
+        changePlayerLink.onclick = (e) => {
+            e.preventDefault();
+            localStorage.removeItem('myPlayerId');
+            localStorage.removeItem('myPlayerName');
+            playerSelectionStep.style.display = 'block';
+            settingsStep.style.display = 'none';
+        };
+
+        const closeModal = () => modalOverlay.style.display = 'none';
+        closeBtn.onclick = closeModal;
+        modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); };
+        
+        const enableNotifications = document.getElementById('enable-notifications');
+        const fieldset = document.getElementById('notification-fieldset');
+        const proximitySlider = document.getElementById('proximity-radius');
+        const proximityValue = document.getElementById('proximity-value');
+        const ghostSlider = document.getElementById('ghost-radius');
+        const ghostValue = document.getElementById('ghost-value');
+        const ghostWorldwide = document.getElementById('ghost-worldwide');
+
+        enableNotifications.onchange = () => {
+            fieldset.disabled = !enableNotifications.checked;
+        };
+        proximitySlider.oninput = () => {
+            proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off';
+        };
+        ghostSlider.oninput = () => {
+            ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off';
+        };
+        ghostWorldwide.onchange = () => {
+            ghostSlider.disabled = ghostWorldwide.checked;
+            ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off');
+        };
+
+        function loadSettings() {
+            const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {};
+            enableNotifications.checked = settings.enabled || false;
+            
+            proximitySlider.value = settings.proximityMiles || 0;
+            ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
+            ghostWorldwide.checked = settings.ghostMiles === -1;
+            
+            proximitySlider.dispatchEvent(new Event('input'));
+            ghostSlider.dispatchEvent(new Event('input'));
+            ghostWorldwide.dispatchEvent(new Event('change'));
+            enableNotifications.dispatchEvent(new Event('change'));
+        }
+        
+        saveBtn.onclick = async () => {
+            const myPlayerId = localStorage.getItem('myPlayerId');
+            const proximityMiles = parseFloat(proximitySlider.value);
+
+            if (proximityMiles > 0 && !myPlayerId) {
+                alert("Please select your player profile to enable proximity alerts.");
+                return;
+            }
+            
+            const settings = {
+                myPlayerId: myPlayerId, 
+                enabled: enableNotifications.checked,
+                proximityMiles: proximityMiles, 
+                ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
+            };
+            
+            localStorage.setItem('notificationSettings', JSON.stringify(settings));
+            socket.emit('update_notification_settings', settings);
+
+            closeModal();
+            alert('Alert preferences saved!');
+        };
+    } 
+
+    socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
+    
+    const setupCollapsiblePanel = (headerId, containerId, iconId) => {
+        const header = document.getElementById(headerId);
+        const container = document.getElementById(containerId);
+        const icon = document.getElementById(iconId);
+        header.addEventListener('click', () => {
+            container.classList.toggle('minimized');
+            icon.textContent = container.classList.contains('minimized') ? '+' : '-';
+        });
+    };
+
+    setupCollapsiblePanel('safezone-header', 'safezone-container', 'safezone-toggle-icon');
+    setupCollapsiblePanel('stealth-header', 'stealth-container', 'stealth-toggle-icon');
+    setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-icon');
+</script>
+
+</body>
+</html>
