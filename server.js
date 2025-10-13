@@ -19,7 +19,7 @@ if (process.env.LOGINS_JSON) {
         console.error("FATAL ERROR: Could not parse LOGINS_JSON environment variable.", err);
         process.exit(1);
     }
-} 
+}
 // Fallback to local file (for local development)
 else {
     try {
@@ -68,7 +68,6 @@ function loadTokensFromFile() {
     }
 }
 
-
 // --- Server Setup ---
 const app = express();
 app.use(express.json());
@@ -87,6 +86,18 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 
+// --- Helper function for distance calculation ---
+function calculateDistanceMiles(lat1, lon1, lat2, lon2) {
+    const R = 3958.8; // Radius of the Earth in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
 // --- UPDATED: Login Endpoint ---
 app.post('/login', (req, res) => {
     const { username, password, rememberMe } = req.body;
@@ -102,20 +113,25 @@ app.post('/login', (req, res) => {
             console.log(`Generated new persistent token for user: ${username}`);
         }
 
+        const isMaster = !!userConfig.isMaster;
+
         res.json({
-            token: token, // <-- Send token back
+            token: token,
             username: username,
-            isMaster: !!userConfig.isMaster,
+            isMaster: isMaster,
             displayName: userConfig.displayName,
-            canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
-            canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
+            // A master can automatically do everything
+            canSeeAllPlayers: isMaster || !!userConfig.canSeeAllPlayers,
+            canSeeLastKnownLocation: isMaster || !!userConfig.canSeeLastKnownLocation,
+            canUseNotifications: isMaster || !!userConfig.canUseNotifications
         });
+
     } else {
         res.status(401).json({ message: 'Invalid credentials' });
     }
 });
 
-// --- NEW: Token Login Endpoint ---
+// --- UPDATED: Token Login Endpoint ---
 app.post('/token-login', (req, res) => {
     const { token } = req.body;
     if (!token) {
@@ -128,12 +144,15 @@ app.post('/token-login', (req, res) => {
         const userConfig = loginConfigs[tokenData.username];
         if (userConfig) {
             console.log(`User ${tokenData.username} logged in via token.`);
+            const isMaster = !!userConfig.isMaster;
             res.json({
                 username: tokenData.username,
-                isMaster: !!userConfig.isMaster,
+                isMaster: isMaster,
                 displayName: userConfig.displayName,
-                canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
-                canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
+                // A master can automatically do everything
+                canSeeAllPlayers: isMaster || !!userConfig.canSeeAllPlayers,
+                canSeeLastKnownLocation: isMaster || !!userConfig.canSeeLastKnownLocation,
+                canUseNotifications: isMaster || !!userConfig.canUseNotifications
             });
         } else {
             // User may have been deleted from logins.json
@@ -168,17 +187,20 @@ const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
 const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
 const authData = {
-    email: process.env.API_EMAIL || "gabrielpchicas@gmail.com",
-    password: process.env.API_PASSWORD || "Pennyfart12@",
+    email: process.env.API_EMAIL,
+    password: process.env.API_PASSWORD,
     goture_meta_security: {},
 };
 
 // --- State Management ---
 let isFetching = false;
 let lastSuccessfulData = null;
+let lastRichDataMap = new Map(); // <-- Keep track of all players
+let masterTeamId = null; // <-- NEW: To store the master account's team ID for notifications
 const FETCH_INTERVAL_MS = 10000;
 const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
 let playerLastKnownLocationMap = new Map();
+let previousPlayerStatusMap = new Map(); // <-- NEW: For ghost detection
 const stealthExpirationMap = new Map();
 const STEALTH_REFETCH_INTERVAL_MS = 2 * 60 * 1000;
 
@@ -201,7 +223,6 @@ function loadMapFromFile() {
         console.error("Error reading location memory file:", err);
     }
 }
-
 
 // --- Data Filtering & Resolution Logic ---
 function filterDataForUser(fullData, userFilterConfig) {
@@ -256,7 +277,6 @@ function filterDataForUser(fullData, userFilterConfig) {
     return result;
 }
 
-
 async function resolveReferenceLogin(loginDetails) {
     console.log(`Attempting to resolve team/target info for login: ${loginDetails.email}`);
     try {
@@ -277,16 +297,17 @@ async function resolveReferenceLogin(loginDetails) {
 
         const myTeamId = dashboardResponse.data.myTeam.length > 0 ? dashboardResponse.data.myTeam[0].team_id : null;
         if (!myTeamId) throw new Error("Could not determine team ID from dashboard.");
-        
+
         const targetTeamIds = new Set();
         if (dashboardResponse.data.targets) {
             dashboardResponse.data.targets.forEach(target => {
                 if (target.team_id) targetTeamIds.add(target.team_id);
             });
         }
-        
+
         console.log(`Successfully resolved login ${loginDetails.email}: Team ID ${myTeamId}, Targets ${[...targetTeamIds].join(', ')}`);
         return { myTeamId, targetTeamIds };
+
     } catch (error) {
         console.error(`Failed to resolve reference login for ${loginDetails.email}:`, error.message);
         if (error.response) console.error("API Response:", error.response.data);
@@ -294,6 +315,93 @@ async function resolveReferenceLogin(loginDetails) {
     }
 }
 
+// --- NEW: Notification Processing Logic ---
+function processNotifications(fullData) {
+    const newPlayerStatusMap = new Map();
+    const allPlayersWithLocation = new Map();
+
+    // Consolidate all players and their current status/location
+    [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
+        if (p.lat && p.lng) {
+            allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
+        }
+        if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
+        else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
+        else newPlayerStatusMap.set(p.u, 'located');
+    });
+    fullData.notLocated.forEach(p => newPlayerStatusMap.set(p.u, 'notLocated'));
+
+    io.sockets.sockets.forEach(socket => {
+        const settings = socket.data.notificationSettings;
+        if (!settings || !settings.myPlayerId || !settings.enabled) return;
+
+        const myPlayerLocation = allPlayersWithLocation.get(settings.myPlayerId);
+        if (!myPlayerLocation) return; // Can't send alerts if we don't know where the user is.
+
+        const previouslyInRange = socket.data.playersInRange || new Set();
+        const currentlyInRange = new Set();
+
+        // 1. Proximity Alerts
+        if (settings.proximityMiles > 0) {
+            for (const otherPlayer of fullData.located) {
+                if (otherPlayer.u === settings.myPlayerId) continue;
+
+                const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
+                if (distance <= settings.proximityMiles) {
+                    currentlyInRange.add(otherPlayer.u);
+                    if (!previouslyInRange.has(otherPlayer.u)) {
+                        socket.emit('proximity_alert', {
+                            type: 'proximity',
+                            player: {
+                                name: `${otherPlayer.firstName} ${otherPlayer.lastName}`,
+                                teamName: otherPlayer.teamName,
+                            },
+                            distance: distance.toFixed(2)
+                        });
+                    }
+                }
+            }
+        }
+        socket.data.playersInRange = currentlyInRange;
+
+        // 2. Ghost Alerts
+        newPlayerStatusMap.forEach((currentStatus, playerId) => {
+            if (playerId === settings.myPlayerId) return;
+
+            const previousStatus = previousPlayerStatusMap.get(playerId) || 'unknown';
+            const justWentGhost = (previousStatus === 'located') && (currentStatus === 'stealthed' || currentStatus === 'notLocated');
+
+            if (justWentGhost) {
+                const ghostPlayerInfo = lastRichDataMap.get(playerId);
+                const ghostLastLocation = playerLastKnownLocationMap.get(playerId);
+                if (!ghostPlayerInfo || !ghostLastLocation) return;
+
+                let isInRange = false;
+                if (settings.ghostMiles === -1) { // -1 signifies worldwide
+                    isInRange = true;
+                } else if (settings.ghostMiles > 0) {
+                    const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
+                    if (distance <= settings.ghostMiles) {
+                        isInRange = true;
+                    }
+                }
+
+                if (isInRange) {
+                    socket.emit('ghost_alert', {
+                        type: 'ghost',
+                        player: {
+                            name: `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name}`,
+                            teamName: ghostPlayerInfo.team_name
+                        }
+                    });
+                }
+            }
+        });
+    });
+
+    // Update the global previous status map for the next cycle
+    previousPlayerStatusMap = new Map(newPlayerStatusMap.entries());
+}
 
 // --- The Core API Fetching Logic ---
 async function runApiRequests() {
@@ -309,12 +417,18 @@ async function runApiRequests() {
         const accessToken = authResponse.data.access_token;
         const bearerToken = `Bearer ${accessToken}`;
         const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
-        
+
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
         const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
         const richDataMap = new Map();
         const targets = dashboardResponse.data.targets || [];
         const myTeam = dashboardResponse.data.myTeam || [];
+        
+        // --- UPDATED: Capture the master account's team ID for notification setup
+        if (myTeam.length > 0 && myTeam[0].team_id) {
+            masterTeamId = myTeam[0].team_id;
+        }
+
         if (dashboardResponse.data.currentPlayer) richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
@@ -327,7 +441,7 @@ async function runApiRequests() {
             const pageData = playersResponse.data;
             if (pageData && pageData.teams && pageData.teams.length > 0) {
                 pageData.teams.flatMap(team => team.players || []).forEach(p => {
-                     if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
+                    if (p && p.id && !richDataMap.has(p.id)) richDataMap.set(p.id, p);
                 });
                 currentCursor++;
             } else {
@@ -335,6 +449,7 @@ async function runApiRequests() {
             }
         }
         console.log(`Total unique players in roster: ${richDataMap.size}`);
+        lastRichDataMap = richDataMap; // Store for notification system
 
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
         const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
@@ -357,7 +472,7 @@ async function runApiRequests() {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
                 mapWasUpdated = true;
             }
-            
+
             let role = 'neutral';
             if (targetIds.has(locData.u)) role = 'target';
             else if (teammateIds.has(locData.u)) role = 'teammate';
@@ -365,7 +480,7 @@ async function runApiRequests() {
             const playerInfo = {
                 u: locData.u, firstName: richData.first_name || 'Player', lastName: richData.last_name || ' ', teamName: richData.team_name || 'N/A', teamColor: richData.team_color || '#3388ff', avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null, role: role, teamId: richData.team_id
             };
-            
+
             const isSafe = richData.is_safe || locData.isz;
             const isStealth = (locData.l === null && locData.a === null) && !isSafe;
 
@@ -386,7 +501,7 @@ async function runApiRequests() {
                 notLocatedPlayers.push({ ...playerInfo, reason: 'No location data available' });
             }
         });
-        
+
         if (mapWasUpdated) { saveMapToFile(); }
 
         const currentStealthedIds = new Set(stealthedPlayers.map(p => p.u));
@@ -420,13 +535,16 @@ async function runApiRequests() {
 
         const dataToEmit = { located: locatedPlayers, notLocated: notLocatedPlayers, stealthed: stealthedPlayersWithTimers, safeZone: safeZonePanelList };
         lastSuccessfulData = dataToEmit;
-        
+
         io.sockets.sockets.forEach(socket => {
             if (socket.data.filterConfig) {
                 const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
                 socket.emit('locationUpdate', userData);
             }
         });
+
+        // --- NEW: Run notification logic after broadcasting data
+        processNotifications(lastSuccessfulData);
 
         console.log(`Broadcasted filtered data to ${io.engine.clientsCount} clients.`);
         console.log("--- End API Request Cycle ---");
@@ -439,7 +557,6 @@ async function runApiRequests() {
     }
 }
 
-
 // --- Connection and Server Start ---
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
@@ -451,15 +568,34 @@ io.on('connection', (socket) => {
         if (userConfig) {
             socket.data.username = username;
             console.log(`Socket ${socket.id} authenticated as user: ${username}`);
-            
-            let filterConfig;
 
+            let filterConfig;
+            let teammates = [];
+            let isMasterNotifier = false; // Flag for notification system. Will remain false for master users now.
+
+            // --- UPDATED: Master user notification logic ---
             if (userConfig.isMaster) {
+                // Master users still get full data visibility
                 filterConfig = { 
                     isMaster: true,
                     canSeeAllPlayers: true,
                     canSeeLastKnownLocation: true
                 };
+                
+                // Populate teammates list for the master user, treating them like a regular user for notifications
+                if (userConfig.canUseNotifications && masterTeamId && lastRichDataMap.size > 0) {
+                    console.log(`[${username}] Populating teammates for master user using team ID: ${masterTeamId}`);
+                    for (const player of lastRichDataMap.values()) {
+                        if (player.team_id === masterTeamId) {
+                            teammates.push({
+                                id: player.id,
+                                name: `${player.first_name} ${player.last_name}`.trim()
+                            });
+                        }
+                    }
+                }
+                // NOTE: isMasterNotifier remains `false` by default, triggering the standard player selection UI on the client.
+
             } else if (userConfig.team_id || userConfig.reference_login) {
                 let resolvedIds = null;
                 if (userConfig.reference_login) {
@@ -478,6 +614,17 @@ io.on('connection', (socket) => {
                         canSeeAllPlayers: !!userConfig.canSeeAllPlayers,
                         canSeeLastKnownLocation: !!userConfig.canSeeLastKnownLocation
                     };
+                    // Populate teammates list ONLY for non-master users with notification permissions
+                    if (userConfig.canUseNotifications && lastRichDataMap.size > 0) {
+                        for (const player of lastRichDataMap.values()) {
+                            if (player.team_id === resolvedIds.myTeamId) {
+                                teammates.push({
+                                    id: player.id,
+                                    name: `${player.first_name} ${player.last_name}`.trim()
+                                });
+                            }
+                        }
+                    }
                 } else {
                     console.error(`[${username}] Could not resolve team info. Disconnecting.`);
                     socket.emit('auth_error', 'Could not resolve team info.');
@@ -493,16 +640,30 @@ io.on('connection', (socket) => {
 
             socket.data.filterConfig = filterConfig;
 
+            // --- UPDATED: Send consolidated success event ---
+            socket.emit('auth_success', {
+                teammates: teammates, 
+                isMasterNotifier: isMasterNotifier
+            });
+
             if (lastSuccessfulData) {
                 const userData = filterDataForUser(lastSuccessfulData, socket.data.filterConfig);
                 socket.emit('locationUpdate', userData);
             }
+
         } else {
             console.log(`Socket ${socket.id} failed authentication for user: ${username}.`);
             socket.disconnect();
         }
     });
-    
+
+    // --- NEW: Listen for notification setting updates from client ---
+    socket.on('update_notification_settings', (settings) => {
+        console.log(`[${socket.data.username}] updated notification settings:`, settings);
+        socket.data.notificationSettings = settings;
+        socket.data.playersInRange = new Set(); // Reset in-range players on setting change
+    });
+
     socket.on('disconnect', () => {
         console.log(`User ${socket.data.username || 'unauthenticated'} disconnected. Total clients: ${io.engine.clientsCount}`);
     });
