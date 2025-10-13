@@ -589,44 +589,63 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
             enableNotifications.dispatchEvent(new Event('change'));
         }
 
-        saveBtn.onclick = async () => {
-            const myPlayerId = localStorage.getItem('myPlayerId');
-            if (!isMaster && !myPlayerId) {
-                alert("Please select your player profile first.");
-                return;
-            }
-            
-            const settings = {
-                myPlayerId: isMaster ? null : myPlayerId,
-                enabled: enableNotifications.checked,
-                proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
-                ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
-            };
-            
-            localStorage.setItem('notificationSettings', JSON.stringify(settings));
-            socket.emit('update_notification_settings', settings);
+// Located in dashboard.html, inside the setupNotificationModal function
 
-            // --- OneSignal Registration Logic ---
-            if (settings.enabled) {
-                await window.OneSignalDeferred.push(async (OneSignal) => {
-                    await OneSignal.User.pushSubscription.optIn();
-                    const oneSignalPlayerId = await OneSignal.User.getPushSubscriptionId();
-                    if (oneSignalPlayerId) {
-                        socket.emit('register_one_signal', oneSignalPlayerId);
-                        console.log('Registered for push notifications with ID:', oneSignalPlayerId);
-                    }
-                });
-            } else {
-                await window.OneSignalDeferred.push(async (OneSignal) => {
-                    await OneSignal.User.pushSubscription.optOut();
-                    console.log('Opted out of push notifications.');
-                });
-            }
-            
-            closeModal();
-            alert('Settings saved!');
-        };
+saveBtn.onclick = async () => {
+    const myPlayerId = localStorage.getItem('myPlayerId');
+    if (!isMaster && !myPlayerId) {
+        alert("Please select your player profile first.");
+        return;
     }
+    
+    const settings = {
+        myPlayerId: isMaster ? null : myPlayerId,
+        enabled: enableNotifications.checked,
+        proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
+        ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
+    };
+    
+    localStorage.setItem('notificationSettings', JSON.stringify(settings));
+    socket.emit('update_notification_settings', settings);
+
+    // --- OneSignal Registration Logic with CRITICAL Error Handling ---
+    let errorOccurred = false;
+    try {
+        await window.OneSignalDeferred.push(async (OneSignal) => {
+            // --- THIS CHECK IS THE FIX ---
+            // It verifies that push features are available before we try to use them.
+            if (!OneSignal.User || !OneSignal.User.pushSubscription) {
+                errorOccurred = true;
+                console.error("OneSignal push features are not initialized. This can be caused by an ad blocker, browser privacy settings, or an incorrect OneSignal dashboard setup (e.g., not 'Typical Site').");
+                alert("Error: Could not initialize push notifications.\n\nPlease check the following:\n1. Disable ALL ad-blocking extensions.\n2. Ensure your OneSignal dashboard is set to 'Typical Site' integration.\n3. Make sure your browser allows notifications for this site.");
+                return; // Stop execution
+            }
+
+            if (settings.enabled) {
+                await OneSignal.User.pushSubscription.optIn();
+                const oneSignalPlayerId = await OneSignal.User.getPushSubscriptionId();
+                if (oneSignalPlayerId) {
+                    socket.emit('register_one_signal', oneSignalPlayerId);
+                    console.log('Registered for push notifications with ID:', oneSignalPlayerId);
+                } else {
+                     console.warn('Opted in, but could not get a push subscription ID. This can happen if permission was just denied.');
+                }
+            } else {
+                await OneSignal.User.pushSubscription.optOut();
+                console.log('Opted out of push notifications.');
+            }
+        });
+    } catch (e) {
+        errorOccurred = true;
+        console.error("An unhandled error occurred during OneSignal opt-in/out:", e);
+        alert("An unhandled error occurred while saving notification settings. Please check the console.");
+    }
+    
+    closeModal();
+    if (!errorOccurred) {
+       alert('Settings saved!');
+    }
+};
 
     
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
@@ -648,3 +667,4 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
 
 </body>
 </html>
+
