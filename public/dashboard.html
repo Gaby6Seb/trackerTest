@@ -127,11 +127,13 @@
 
 
 <script>
-    // --- NEW: OneSignal Initialization ---
+    // --- OneSignal Initialization ---
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(function(OneSignal) {
         OneSignal.init({
             appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
+            // --- FIX: Add this line for local development ---
+            allowLocalhostAsSecureOrigin: true,
         }).then(() => {
             console.log("OneSignal SDK Initialized.");
         });
@@ -311,27 +313,17 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
       if (initialMapLoad) initialMapLoad = false;
     });
     
-    function showInAppNotification(title, options) {
-        if (!("Notification" in window)) {
-           console.warn("Browser does not support desktop notifications.");
-        } else if (Notification.permission === "granted") {
-            new Notification(title, options);
-        }
-    }
+    // --- REMOVED Redundant showInAppNotification function ---
     
-socket.on('proximity_alert', (data) => {
-    console.log('Proximity Alert:', data);
-    showInAppNotification('Proximity Alert!', {
-        body: `${data.player.name} (${data.player.teamName}) has entered your ${data.distance} mile radius.`
+    socket.on('proximity_alert', (data) => {
+        // The server now sends a real push notification. A console log is sufficient here for debugging when the tab is open.
+        console.log('Proximity Alert (Push Sent by Server):', data);
     });
-});
 
-socket.on('ghost_alert', (data) => {
-    console.log('Ghost Alert:', data);
-    showInAppNotification('Ghost Alert!', {
-        body: `${data.player.name} (${data.player.teamName}) just went off the grid.`
+    socket.on('ghost_alert', (data) => {
+        // The server now sends a real push notification.
+        console.log('Ghost Alert (Push Sent by Server):', data);
     });
-});
 
 
 
