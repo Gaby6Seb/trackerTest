@@ -649,6 +649,8 @@ io.on('connection', (socket) => {
                     canSeeLastKnownLocation: true
                 };
                 
+                isMasterNotifier = !!userConfig.canUseNotifications; // <-- FIX: Correctly set the flag for master users
+
                 if (userConfig.canUseNotifications && masterTeamId && lastRichDataMap.size > 0) {
                     console.log(`[${username}] Populating teammates for master user using team ID: ${masterTeamId}`);
                     for (const player of lastRichDataMap.values()) {
