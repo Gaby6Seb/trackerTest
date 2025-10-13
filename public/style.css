@@ -6,7 +6,6 @@ color: #333;
 display: flex;
 flex-direction: column;
 height: 100vh;
-overflow: hidden; /* Prevents body scrolling, especially on mobile */
 }
 
 #map {
@@ -32,22 +31,6 @@ align-items: center;
 
 .user-info { display: flex; align-items: center; gap: 15px; }
 #display-name { font-weight: bold; font-size: 0.9em; }
-
-/* NEW: Notification Bell Button */
-#notification-btn {
-    background: transparent;
-    border: none;
-    font-size: 1.5em;
-    cursor: pointer;
-    color: white;
-    padding: 0 5px;
-    transition: transform 0.2s;
-}
-#notification-btn:hover {
-    transform: scale(1.1) rotate(15deg);
-}
-
-
 #logout-btn {
     background-color: #f8f9fa; color: #007bff; border: 1px solid #007bff;
     padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold;
@@ -63,34 +46,10 @@ background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px;
 box-shadow: 0 4px 12px rgba(0,0,0,0.2); max-width: 320px; width: 90vw;
 max-height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 15px;
 }
-
-/* --- NEW: Search Container & Clear Button --- */
-#search-container {
-    position: relative;
-}
 #player-search {
 width: 100%; padding: 10px; border: 1px solid #ccc;
 border-radius: 5px; font-size: 1em; box-sizing: border-box;
-padding-right: 35px; /* Make space for the X button */
 }
-#clear-search-btn {
-    position: absolute;
-    right: 5px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: transparent;
-    border: none;
-    font-size: 1.8em;
-    line-height: 1;
-    cursor: pointer;
-    color: #999;
-    padding: 0 5px;
-    display: none; /* Hidden by default */
-}
-#clear-search-btn:hover {
-    color: #333;
-}
-
 
 /* Collapsible containers */
 #not-located-container, #safezone-container, #stealth-container {
@@ -178,117 +137,61 @@ cursor: pointer; transition: background-color 0.2s ease-in-out;
 }
 .popup-directions-btn:hover { background-color: #0056b3; }
 
-/* Filter Toggles */
-#filter-toggles {
-display: flex; align-items: center; padding: 8px 4px;
-background-color: #f0f0f0; border-radius: 5px;
+/* Filter & Notification Toggles */
+#filter-toggles, #notification-toggle-container {
+    display: flex; align-items: center; padding: 8px 4px;
+    background-color: #f0f0f0; border-radius: 5px;
 }
-#filter-toggles label {
-display: flex; align-items: center; cursor: pointer; font-size: 0.9em;
-color: #555; width: 100%; user-select: none;
+#filter-toggles label, .switch-label {
+    display: flex; align-items: center; justify-content: space-between; 
+    cursor: pointer; font-size: 0.9em;
+    color: #555; width: 100%; user-select: none;
 }
 #filter-toggles input[type="checkbox"] {
-margin-right: 10px; transform: scale(1.2); accent-color: #007bff;
+    margin-right: 10px; transform: scale(1.2); accent-color: #007bff;
 }
 
-/* Add this new rule to your style.css file */
+/* NEW: Toggle Switch Styles */
+.switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc; transition: .4s;
+}
+.slider:before {
+    position: absolute; content: ""; height: 20px; width: 20px;
+    left: 4px; bottom: 4px; background-color: white; transition: .4s;
+}
+input:checked + .slider { background-color: #28a745; }
+input:focus + .slider { box-shadow: 0 0 1px #28a745; }
+input:checked + .slider:before { transform: translateX(22px); }
+.slider.round { border-radius: 34px; }
+.slider.round:before { border-radius: 50%; }
 
+
+/* Stealthed Marker Icon */
 .stealthed-marker .marker-pin-avatar::after, 
 .stealthed-marker .marker-pin::after {
-    content: '👻'; /* Ghost emoji! */
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    font-size: 16px;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
-    padding: 2px;
-    line-height: 1;
-    text-shadow: 0 0 2px #000;
+    content: '👻';
+    position: absolute; top: -8px; right: -8px; font-size: 16px;
+    background: rgba(255, 255, 255, 0.8); border-radius: 50%;
+    padding: 2px; line-height: 1; text-shadow: 0 0 2px #000;
 }
-
-/* --- NEW: Notification Modal Styles --- */
-.modal-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.6); z-index: 2000;
-    display: flex; align-items: center; justify-content: center;
-}
-.modal-content {
-    background: white; padding: 25px 30px; border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    width: 90%; max-width: 450px; position: relative;
-}
-.modal-close-btn {
-    position: absolute; top: 10px; right: 10px;
-    background: transparent; border: none; font-size: 1.8em;
-    cursor: pointer; color: #999;
-}
-#player-selection-step h2, #notification-settings-step h2 {
-    margin-top: 0; color: #007bff;
-}
-#teammate-list {
-    list-style: none; padding: 0; margin: 20px 0; max-height: 50vh; overflow-y: auto;
-}
-#teammate-list li {
-    padding: 12px; border: 1px solid #ddd; border-radius: 5px;
-    margin-bottom: 8px; cursor: pointer; transition: all 0.2s ease;
-}
-#teammate-list li:hover { background-color: #e7f3ff; border-color: #007bff; }
-#my-player-name { color: #28a745; }
-#change-player-link { font-size: 0.8em; }
-
-.setting-row { margin-bottom: 20px; }
-.setting-row.master-toggle {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 15px; background-color: #f8f9fa; border-radius: 8px;
-}
-.setting-row label { display: block; margin-bottom: 8px; font-weight: bold; }
-.setting-row .sub-label { display: inline-flex; align-items: center; font-weight: normal; margin-top: 10px; font-size: 0.9em; }
-.setting-row .sub-label input { margin-right: 8px; }
-.range-container { display: flex; align-items: center; gap: 15px; }
-.range-container input[type="range"] { flex-grow: 1; }
-.range-container span { font-weight: bold; color: #007bff; min-width: 80px; text-align: right; }
-
-#notification-fieldset { border: none; padding: 0; margin: 0; }
-#notification-fieldset:disabled { opacity: 0.5; }
-
-#save-settings-btn {
-    width: 100%; padding: 12px; font-size: 1.1em; font-weight: bold;
-    color: white; background-color: #28a745; border: none; border-radius: 5px;
-    cursor: pointer; transition: background-color 0.2s;
-}
-#save-settings-btn:hover { background-color: #218838; }
-
-.toggle-switch {
-    position: relative; width: 50px; height: 26px; -webkit-appearance: none;
-    background: #ccc; outline: none; border-radius: 20px;
-    box-shadow: inset 0 0 5px rgba(0,0,0,0.2); transition: 0.3s;
-}
-.toggle-switch:checked { background: #007bff; }
-.toggle-switch::before {
-    content: ''; position: absolute; width: 22px; height: 22px; border-radius: 20px;
-    top: 2px; left: 2px; background: white;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: 0.3s;
-}
-.toggle-switch:checked::before { left: 26px; }
-
-
 
 /* Mobile Layout Adjustments */
 @media (max-width: 767px) {
-.header { flex-direction: column; padding-bottom: 15px; }
-.header-content { text-align: center; margin-bottom: 10px; }
-#controls-container {
-/* --- UPDATED: Mobile Scrolling Fix --- */
-position: fixed; /* Use fixed positioning to anchor to viewport */
-top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-width: none;
-border-radius: 15px 15px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
-padding: 10px 15px 15px; max-height: 45vh; box-sizing: border-box;
-}
-#not-located-list, #safezone-list, #stealth-list { max-height: 25vh; }
-#safezone-container { order: 1; }
-#stealth-container { order: 2; }
-#not-located-container { order: 3; }
-#filter-toggles { order: 4; }
-#search-container { order: 5; }
+    .header { flex-direction: column; padding-bottom: 15px; }
+    .header-content { text-align: center; margin-bottom: 10px; }
+    #controls-container {
+        top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-width: none;
+        border-radius: 15px 15px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+        padding: 10px 15px 15px; max-height: 45vh; box-sizing: border-box;
+    }
+    #not-located-list, #safezone-list, #stealth-list { max-height: 25vh; }
+    #safezone-container { order: 1; }
+    #stealth-container { order: 2; }
+    #not-located-container { order: 3; }
+    #notification-toggle-container { order: 4; } /* NEW */
+    #filter-toggles { order: 5; }
+    #search-container { order: 6; }
 }
