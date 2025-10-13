@@ -82,10 +82,8 @@
             <h2>Notification Settings for <span id="my-player-name"></span></h2>
             <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
             
-            <!-- MODIFIED: Added a wrapper for the subscription controls -->
             <div class="setting-row master-toggle">
                 <label>Manage Subscription</label>
-                <!-- ADDED: This is where OneSignal will place its custom button -->
                 <div class='onesignal-customlink-container'></div>
             </div>
 
@@ -125,7 +123,6 @@
     // --- OneSignal Initialization ---
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(function(OneSignal) {
-        // MODIFIED: Added promptOptions to enable the custom link
         OneSignal.init({
             appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
             allowLocalhostAsSecureOrigin: true,
@@ -142,7 +139,6 @@
             }
         }).then(() => {
             console.log("OneSignal SDK Initialized.");
-            // When the user subscribes via the custom link, register their ID with our server
             OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
                 if (isSubscribed) {
                     const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
@@ -496,18 +492,46 @@
         const settingsTitle = settingsStep.querySelector('h2');
         const proximitySettingRow = document.querySelector('#proximity-radius').closest('.setting-row');
         
+        // This 'isMaster' check is only for UI; the critical bug was in the saveBtn logic below
         if (isMaster) {
-            const showMasterSettings = () => {
+            teammateList.innerHTML = '';
+            teammates.forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = player.name;
+                li.dataset.id = player.id;
+                li.onclick = () => {
+                    localStorage.setItem('myPlayerId', player.id);
+                    localStorage.setItem('myPlayerName', player.name);
+                    showRegularUserSettings(player.name);
+                };
+                teammateList.appendChild(li);
+            });
+             const showRegularUserSettings = (playerName) => {
                 playerSelectionStep.style.display = 'none';
                 settingsStep.style.display = 'block';
-                settingsTitle.textContent = 'Master Notification Settings';
-                changePlayerLink.style.display = 'none';
-                proximitySettingRow.style.display = 'none';
-                loadSettings(true);
+                settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
+                changePlayerLink.style.display = 'inline';
+                // Proximity should be available for masters if they select a player
+                proximitySettingRow.style.display = 'block'; 
+                loadSettings(false); // Load as a regular user to show all settings
             };
-            openBtn.onclick = () => {
+             openBtn.onclick = () => {
                 modalOverlay.style.display = 'flex';
-                showMasterSettings();
+                const myPlayerId = localStorage.getItem('myPlayerId');
+                const myPlayerName = localStorage.getItem('myPlayerName');
+                if (myPlayerId && myPlayerName) {
+                    showRegularUserSettings(myPlayerName);
+                } else {
+                    playerSelectionStep.style.display = 'block';
+                    settingsStep.style.display = 'none';
+                }
+            };
+             changePlayerLink.onclick = (e) => {
+                e.preventDefault();
+                localStorage.removeItem('myPlayerId');
+                localStorage.removeItem('myPlayerName');
+                playerSelectionStep.style.display = 'block';
+                settingsStep.style.display = 'none';
             };
         } 
         else {
@@ -584,41 +608,38 @@
             const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {};
             enableNotifications.checked = settings.enabled || false;
             
-            if (forMaster) {
-                ghostWorldwide.checked = true;
-                ghostSlider.value = 0;
-            } else {
-                proximitySlider.value = settings.proximityMiles || 0;
-                ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
-                ghostWorldwide.checked = settings.ghostMiles === -1;
-            }
+            // Simplified: master users who select a player are treated like regular users for settings
+            proximitySlider.value = settings.proximityMiles || 0;
+            ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
+            ghostWorldwide.checked = settings.ghostMiles === -1;
             
             proximitySlider.dispatchEvent(new Event('input'));
             ghostSlider.dispatchEvent(new Event('input'));
             ghostWorldwide.dispatchEvent(new Event('change'));
             enableNotifications.dispatchEvent(new Event('change'));
         }
-
-        // MODIFIED: This button no longer handles subscribing, only saving preferences.
+        
         saveBtn.onclick = async () => {
             const myPlayerId = localStorage.getItem('myPlayerId');
-            if (!isMaster && !myPlayerId) {
-                alert("Please select your player profile first.");
+            const proximityMiles = parseFloat(proximitySlider.value);
+
+            // CORRECTED LOGIC: Check for a player ID if proximity is enabled
+            if (proximityMiles > 0 && !myPlayerId) {
+                alert("Please select your player profile to enable proximity alerts.");
                 return;
             }
             
             const settings = {
-                myPlayerId: isMaster ? null : myPlayerId,
+                // BUG FIX: Always send the selected player ID. Don't set to null for masters.
+                myPlayerId: myPlayerId, 
                 enabled: enableNotifications.checked,
-                proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
-                ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
+                // Don't zero out proximity for masters. Let them use it if they've selected a player.
+                proximityMiles: proximityMiles, 
+                ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
             };
             
             localStorage.setItem('notificationSettings', JSON.stringify(settings));
             socket.emit('update_notification_settings', settings);
-
-            // REMOVED: All the OneSignal optIn/optOut logic is gone from here.
-            // The custom link button now handles this automatically.
 
             closeModal();
             alert('Alert preferences saved!');
