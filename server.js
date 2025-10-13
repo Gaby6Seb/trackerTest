@@ -640,10 +640,6 @@ io.on('connection', (socket) => {
 
             let filterConfig;
             let teammates = [];
-            // --- FIX REVERTED ---
-            // This flag was causing the player selection to be hidden. 
-            // By keeping it false, the client will always show the player selection list first, restoring the original behavior.
-            let isMasterNotifier = false;
 
             if (userConfig.isMaster) {
                 filterConfig = { 
@@ -707,9 +703,10 @@ io.on('connection', (socket) => {
 
             socket.data.filterConfig = filterConfig;
 
+            // FIX: Removed the obsolete and confusing `isMasterNotifier` flag. The client now
+            // correctly handles the initialization based on the presence of the `teammates` array.
             socket.emit('auth_success', {
-                teammates: teammates, 
-                isMasterNotifier: isMasterNotifier
+                teammates: teammates
             });
 
             if (lastSuccessfulData) {
