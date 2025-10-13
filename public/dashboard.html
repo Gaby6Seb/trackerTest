@@ -1,3 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splashin' Live Dashboard</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+  <!-- OneSignal SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+        <h1>Splashin' Live Dashboard</h1>
+        <p class="subtitle">Connecting...</p>
+    </div>
+    <div class="user-info">
+        <button id="notification-btn" style="display: none;">🔔</button>
+        <span id="display-name"></span>
+        <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="controls-container">
+    <div id="search-container">
+        <input type="text" id="player-search" placeholder="Search names or teams (e.g., John, Blue Team)...">
+        <button id="clear-search-btn">&times;</button>
+    </div>
+    <div id="filter-toggles">
+      <label for="show-all-toggle">
+        <input type="checkbox" id="show-all-toggle">
+        Show All Players
+      </label>
+    </div>
+    <div id="safezone-container" class="minimized">
+        <h2 id="safezone-header">
+            Players in Safe Zone
+            <span id="safezone-toggle-icon">+</span>
+        </h2>
+        <ul id="safezone-list"></ul>
+    </div>
+    <div id="stealth-container" class="minimized">
+        <h2 id="stealth-header">
+            Stealthed Players
+            <span id="stealth-toggle-icon">+</span>
+        </h2>
+        <ul id="stealth-list"></ul>
+    </div>
+    <div id="not-located-container" class="minimized">
+        <h2 id="not-located-header">
+            Players Not on Map
+            <span id="toggle-icon">+</span>
+        </h2>
+        <ul id="not-located-list"></ul>
+    </div>
+  </div>
+
+  <!-- Notification Modal -->
+  <div id="notification-modal-overlay" class="modal-overlay" style="display: none;">
+    <div id="notification-modal" class="modal-content">
+        <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+        
+        <div id="player-selection-step">
+            <h2>Who are you?</h2>
+            <p>Select your name from the list to enable notifications.</p>
+            <ul id="teammate-list">
+            </ul>
+        </div>
+        
+        <div id="notification-settings-step" style="display: none;">
+            <h2>Notification Settings for <span id="my-player-name"></span></h2>
+            <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
+            
+            <div class="setting-row master-toggle">
+                <label>Manage Subscription</label>
+                <div class='onesignal-customlink-container'></div>
+            </div>
+
+            <div class="setting-row master-toggle">
+                <label for="enable-notifications">Enable Alert Preferences</label>
+                <input type="checkbox" id="enable-notifications" class="toggle-switch">
+            </div>
+
+            <fieldset id="notification-fieldset">
+                <div class="setting-row">
+                    <label for="proximity-radius">Proximity Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="proximity-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="proximity-value">Off</span>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <label for="ghost-radius">"Ghost" Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="ghost-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="ghost-value">Off</span>
+                    </div>
+                    <label class="sub-label">
+                      <input type="checkbox" id="ghost-worldwide"> No Range Limit (Worldwide)
+                    </label>
+                </div>
+            </fieldset>
+            
+            <button id="save-settings-btn">Save Alert Preferences</button>
+        </div>
+    </div>
+  </div>
+
+
 <script>
     // --- OneSignal Initialization ---
     window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -325,6 +446,9 @@
     setupCollapsiblePanel('stealth-header', 'stealth-container', 'stealth-toggle-icon');
     setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-icon');
 </script>
+
+</body>
+</html>
 
 </body>
 </html>
