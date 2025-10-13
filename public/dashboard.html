@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Splashin' Live Dashboard</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
@@ -11,8 +15,21 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
-  <!-- NEW: OneSignal SDK -->
+  <!-- OneSignal SDK -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(registration => {
+          console.log('Service Worker registered with scope:', registration.scope);
+        }).catch(error => {
+          console.log('Service Worker registration failed:', error);
+        });
+      });
+    }
+  </script>
 </head>
 <body>
   <div class="header">
@@ -294,14 +311,12 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
       if (initialMapLoad) initialMapLoad = false;
     });
     
-    // --- UPDATED: In-App Notification (still useful when tab is open) ---
     function showInAppNotification(title, options) {
         if (!("Notification" in window)) {
            console.warn("Browser does not support desktop notifications.");
         } else if (Notification.permission === "granted") {
             new Notification(title, options);
         }
-        // We no longer ask for permission here, as OneSignal handles it.
     }
     
 socket.on('proximity_alert', (data) => {
@@ -467,8 +482,7 @@ socket.on('ghost_alert', (data) => {
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
     }
     
-    // --- UPDATED: Notification Modal Logic with OneSignal ---
-     function setupNotificationModal(teammates, isMaster = false) {
+    function setupNotificationModal(teammates, isMaster = false) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
         const closeBtn = document.getElementById('modal-close-btn');
@@ -642,4 +656,3 @@ socket.on('ghost_alert', (data) => {
 
 </body>
 </html>
-
