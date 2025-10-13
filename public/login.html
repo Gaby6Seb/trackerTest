@@ -129,6 +129,7 @@
             localStorage.setItem('displayName', data.displayName);
             localStorage.setItem('canSeeAllPlayers', data.canSeeAllPlayers);
             localStorage.setItem('canSeeLastKnownLocation', data.canSeeLastKnownLocation);
+            localStorage.setItem('canUseNotifications', data.canUseNotifications); // <-- NEW
             // Also store the token if it exists
             if (data.token) {
                 localStorage.setItem('authToken', data.token);
