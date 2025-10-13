@@ -82,8 +82,15 @@
             <h2>Notification Settings for <span id="my-player-name"></span></h2>
             <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
             
+            <!-- MODIFIED: Added a wrapper for the subscription controls -->
             <div class="setting-row master-toggle">
-                <label for="enable-notifications">Enable All Notifications</label>
+                <label>Manage Subscription</label>
+                <!-- ADDED: This is where OneSignal will place its custom button -->
+                <div class='onesignal-customlink-container'></div>
+            </div>
+
+            <div class="setting-row master-toggle">
+                <label for="enable-notifications">Enable Alert Preferences</label>
                 <input type="checkbox" id="enable-notifications" class="toggle-switch">
             </div>
 
@@ -108,7 +115,7 @@
                 </div>
             </fieldset>
             
-            <button id="save-settings-btn">Save Settings</button>
+            <button id="save-settings-btn">Save Alert Preferences</button>
         </div>
     </div>
   </div>
@@ -118,11 +125,33 @@
     // --- OneSignal Initialization ---
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(function(OneSignal) {
+        // MODIFIED: Added promptOptions to enable the custom link
         OneSignal.init({
             appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
             allowLocalhostAsSecureOrigin: true,
+            promptOptions: {
+                customlink: {
+                    enabled: true,
+                    style: "button",
+                    size: "medium",
+                    text: {
+                        "subscribe-button": "Subscribe to Push Notifications",
+                        "unsubscribe-button": "Unsubscribe from Push Notifications",
+                    },
+                }
+            }
         }).then(() => {
             console.log("OneSignal SDK Initialized.");
+            // When the user subscribes via the custom link, register their ID with our server
+            OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
+                if (isSubscribed) {
+                    const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
+                    if (oneSignalPlayerId) {
+                        socket.emit('register_one_signal', oneSignalPlayerId);
+                        console.log('Registered for push notifications with ID:', oneSignalPlayerId);
+                    }
+                }
+            });
         });
     });
 
@@ -570,6 +599,7 @@
             enableNotifications.dispatchEvent(new Event('change'));
         }
 
+        // MODIFIED: This button no longer handles subscribing, only saving preferences.
         saveBtn.onclick = async () => {
             const myPlayerId = localStorage.getItem('myPlayerId');
             if (!isMaster && !myPlayerId) {
@@ -587,42 +617,13 @@
             localStorage.setItem('notificationSettings', JSON.stringify(settings));
             socket.emit('update_notification_settings', settings);
 
-            let errorOccurred = false;
-            try {
-                await window.OneSignalDeferred.push(async (OneSignal) => {
-                    if (!OneSignal.User || !OneSignal.User.pushSubscription) {
-                        errorOccurred = true;
-                        console.error("OneSignal push features are not initialized. This can be caused by an ad blocker, browser privacy settings, or an incorrect OneSignal dashboard setup (e.g., not 'Typical Site').");
-                        alert("Error: Could not initialize push notifications.\n\nPlease check the following:\n1. Disable ALL ad-blocking extensions.\n2. Ensure your OneSignal dashboard is set to 'Typical Site' integration.\n3. Make sure your browser allows notifications for this site.");
-                        return;
-                    }
+            // REMOVED: All the OneSignal optIn/optOut logic is gone from here.
+            // The custom link button now handles this automatically.
 
-                    if (settings.enabled) {
-                        await OneSignal.User.pushSubscription.optIn();
-                        const oneSignalPlayerId = await OneSignal.User.getPushSubscriptionId();
-                        if (oneSignalPlayerId) {
-                            socket.emit('register_one_signal', oneSignalPlayerId);
-                            console.log('Registered for push notifications with ID:', oneSignalPlayerId);
-                        } else {
-                             console.warn('Opted in, but could not get a push subscription ID. This can happen if permission was just denied.');
-                        }
-                    } else {
-                        await OneSignal.User.pushSubscription.optOut();
-                        console.log('Opted out of push notifications.');
-                    }
-                });
-            } catch (e) {
-                errorOccurred = true;
-                console.error("An unhandled error occurred during OneSignal opt-in/out:", e);
-                alert("An unhandled error occurred while saving notification settings. Please check the console.");
-            }
-            
             closeModal();
-            if (!errorOccurred) {
-               alert('Settings saved!');
-            }
+            alert('Alert preferences saved!');
         };
-    } // <-- This closing brace is the critical syntax fix.
+    } 
 
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
     
