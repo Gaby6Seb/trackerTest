@@ -640,6 +640,9 @@ io.on('connection', (socket) => {
 
             let filterConfig;
             let teammates = [];
+            // --- FIX REVERTED ---
+            // This flag was causing the player selection to be hidden. 
+            // By keeping it false, the client will always show the player selection list first, restoring the original behavior.
             let isMasterNotifier = false;
 
             if (userConfig.isMaster) {
@@ -649,8 +652,6 @@ io.on('connection', (socket) => {
                     canSeeLastKnownLocation: true
                 };
                 
-                isMasterNotifier = !!userConfig.canUseNotifications; // <-- FIX: Correctly set the flag for master users
-
                 if (userConfig.canUseNotifications && masterTeamId && lastRichDataMap.size > 0) {
                     console.log(`[${username}] Populating teammates for master user using team ID: ${masterTeamId}`);
                     for (const player of lastRichDataMap.values()) {
