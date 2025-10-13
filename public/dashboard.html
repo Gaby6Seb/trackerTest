@@ -19,14 +19,18 @@
         <p class="subtitle">Connecting...</p>
     </div>
     <div class="user-info">
+        <!-- NEW: Notification Bell -->
+        <button id="notification-btn" style="display: none;">🔔</button>
         <span id="display-name"></span>
         <button id="logout-btn">Logout</button>
     </div>
   </div>
   <div id="map"></div>
   <div id="controls-container">
+    <!-- --- UPDATED: Search Improvements --- -->
     <div id="search-container">
-        <input type="text" id="player-search" placeholder="Search by name or team...">
+        <input type="text" id="player-search" placeholder="Search names or teams (e.g., John, Blue Team)...">
+        <button id="clear-search-btn">&times;</button>
     </div>
     <div id="filter-toggles">
       <label for="show-all-toggle">
@@ -57,6 +61,57 @@
     </div>
   </div>
 
+  <!-- NEW: Notification Modal -->
+  <div id="notification-modal-overlay" class="modal-overlay" style="display: none;">
+    <div id="notification-modal" class="modal-content">
+        <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+        
+        <!-- Step 1: Player Selection -->
+        <div id="player-selection-step">
+            <h2>Who are you?</h2>
+            <p>Select your name from the list to enable notifications.</p>
+            <ul id="teammate-list">
+                <!-- Teammates will be populated here -->
+            </ul>
+        </div>
+        
+        <!-- Step 2: Settings -->
+        <div id="notification-settings-step" style="display: none;">
+            <h2>Notification Settings for <span id="my-player-name"></span></h2>
+            <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
+            
+            <div class="setting-row master-toggle">
+                <label for="enable-notifications">Enable All Notifications</label>
+                <input type="checkbox" id="enable-notifications" class="toggle-switch">
+            </div>
+
+            <fieldset id="notification-fieldset">
+                <div class="setting-row">
+                    <label for="proximity-radius">Proximity Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="proximity-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="proximity-value">Off</span>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <label for="ghost-radius">"Ghost" Alert Radius (miles)</label>
+                    <div class="range-container">
+                        <input type="range" id="ghost-radius" min="0" max="10" step="0.5" value="0">
+                        <span id="ghost-value">Off</span>
+                    </div>
+                    <label class="sub-label">
+                      <input type="checkbox" id="ghost-worldwide"> No Range Limit (Worldwide)
+                    </label>
+                </div>
+            </fieldset>
+            
+            <button id="save-settings-btn">Save Settings</button>
+        </div>
+    </div>
+  </div>
+
+
 <script>
     // --- Login Authentication Guard ---
     const username = localStorage.getItem('username');
@@ -64,6 +119,7 @@
     const displayName = localStorage.getItem('displayName');
     const canSeeAllPlayers = localStorage.getItem('canSeeAllPlayers') === 'true';
     const canSeeLastKnownLocation = localStorage.getItem('canSeeLastKnownLocation') === 'true';
+    const canUseNotifications = localStorage.getItem('canUseNotifications') === 'true';
 
     if (!username) {
         window.location.href = '/'; // Redirect to login page if not authenticated
@@ -78,13 +134,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('filter-toggles').style.display = 'none';
         }
 
-        // --- UPDATED: Logout Button Logic ---
+        if (canUseNotifications) {
+            document.getElementById('notification-btn').style.display = 'block';
+        }
+
         document.getElementById('logout-btn').addEventListener('click', async () => {
             const token = localStorage.getItem('authToken');
             
             if (token) {
                 try {
-                    // Tell the server to invalidate the token
                     await fetch('/logout', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -95,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // Clear local storage and redirect regardless of server response
             localStorage.clear();
             socket.disconnect();
             window.location.href = '/';
@@ -121,16 +178,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let initialMapLoad = true;
     let timerUpdateInterval = null;
 
-const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => { // <-- Added isStealthed
+const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed) => {
   const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
   const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
-  const stealthedClass = isStealthed ? 'stealthed-marker' : ''; // <-- New line
+  const stealthedClass = isStealthed ? 'stealthed-marker' : '';
   const lastKnownClass = isLastKnown ? 'last-known-marker' : '';
   const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
   let pinStyles = `background-color: ${color || '#3388ff'};`;
   if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
   const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
-  const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`; // <-- Added stealthedClass
+  const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}</div>${pulseHtml}</div>`;
   const iconSize = avatarUrl ? [40, 52] : [30, 42];
   const iconAnchor = avatarUrl ? [20, 52] : [15, 42]; 
   return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: iconSize, iconAnchor: iconAnchor });
@@ -175,10 +232,17 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
         localStorage.clear();
         window.location.href = '/';
     });
+    
+    // --- NEW: Handle successful authentication and teammate list ---
+    socket.on('auth_success', (data) => {
+        // The master user has notification powers but no "teammates"
+        if (data.isMasterNotifier || (data.teammates && data.teammates.length > 0)) {
+            setupNotificationModal(data.teammates, data.isMasterNotifier);
+        }
+    });
 
     socket.on('locationUpdate', (data) => {
-      // The server will have already filtered out lat/lng for stealthed/safezone players
-      // if the user doesn't have permission, so the .filter() calls here work automatically.
+      document.querySelector('.subtitle').textContent = 'Live';
       allPlayersWithLocation = [
           ...data.located.map(p => ({ ...p, statusType: 'located' })),
           ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
@@ -196,7 +260,6 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
                   listItem.dataset.uid = player.u;
                   let details = reasonKey && player[reasonKey] ? ` - ${player[reasonKey]}` : '';
 
-                  // Only make list items clickable if they have a location to pan to
                   if (player.lat && player.lng) {
                       listItem.classList.add('clickable-list-item');
                       listItem.onclick = () => panToLastLocation(player.lat, player.lng);
@@ -225,6 +288,38 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
       filterMarkers(document.getElementById('player-search').value, initialMapLoad);
       if (initialMapLoad) initialMapLoad = false;
     });
+    
+    // --- NEW: Notification Alert Listeners ---
+    function showNotification(title, options) {
+        if (!("Notification" in window)) {
+            alert("This browser does not support desktop notification");
+        } else if (Notification.permission === "granted") {
+            new Notification(title, options);
+        } else if (Notification.permission !== "denied") {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    new Notification(title, options);
+                }
+            });
+        }
+    }
+    
+    socket.on('proximity_alert', (data) => {
+        console.log('Proximity Alert:', data);
+        showNotification('Proximity Alert!', {
+            body: `${data.player.name} (${data.player.teamName}) has entered your ${data.distance} mile radius.`,
+            icon: '/favicon.ico' // Optional: add an icon
+        });
+    });
+
+    socket.on('ghost_alert', (data) => {
+        console.log('Ghost Alert:', data);
+        showNotification('Ghost Alert!', {
+            body: `${data.player.name} (${data.player.teamName}) just went off the grid.`,
+            icon: '/favicon.ico'
+        });
+    });
+
 
     function panToLastLocation(lat, lng) {
         map.setView([lat, lng], 17);
@@ -249,6 +344,7 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
         ];
         for (const listInfo of listsToSearch) {
             if (listInfo.data) {
+                // For multi-search, just find the first term
                 const foundPlayer = listInfo.data.find(p => 
                     (`${p.firstName || ''} ${p.lastName || ''}`.toLowerCase().includes(lowerCaseSearchTerm)) ||
                     ((p.teamName || '').toLowerCase().includes(lowerCaseSearchTerm))
@@ -266,10 +362,26 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
         }
     }
 
-    document.getElementById('player-search').addEventListener('input', (e) => filterMarkers(e.target.value, false));
+    // --- UPDATED: Search Improvements ---
+    const searchInput = document.getElementById('player-search');
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+
+    searchInput.addEventListener('input', (e) => {
+        const hasText = e.target.value.length > 0;
+        clearSearchBtn.style.display = hasText ? 'block' : 'none';
+        filterMarkers(e.target.value, true); // `true` tells it to pan/zoom
+    });
+
+    clearSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        clearSearchBtn.style.display = 'none';
+        filterMarkers('', true); // `true` tells it to zoom out
+        searchInput.focus();
+    });
+
     document.getElementById('show-all-toggle').addEventListener('change', (e) => {
         showAllPlayers = e.target.checked;
-        filterMarkers(document.getElementById('player-search').value, false);
+        filterMarkers(searchInput.value, true);
     });
 
     function getDirections(buttonElement) {
@@ -277,14 +389,15 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
         window.open(url, '_blank');
     }
 
-    function filterMarkers(searchTerm, initialLoad = false) {
+    // --- UPDATED: Search & Zoom Logic ---
+    function filterMarkers(searchTerm, shouldFitBounds = false) {
         markers.clearLayers(); 
-        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
         const foundPlayerCoords = []; 
         const updatedUids = new Set(); 
         
         allPlayersWithLocation.forEach(user => { 
-            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, status, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
+            const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType } = user;
             
             const isNeutral = role !== 'teammate' && role !== 'target';
             const shouldDisplay = showAllPlayers || !isNeutral;
@@ -293,7 +406,8 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
 
             const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
             const fullTeamName = (teamName || '').toLowerCase();
-            const isMatch = (!lowerCaseSearchTerm || fullName.includes(lowerCaseSearchTerm) || fullTeamName.includes(lowerCaseSearchTerm));
+            
+            const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term));
 
             if (isMatch) {
                 updatedUids.add(u);
@@ -303,42 +417,14 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
                 const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed';
 
                 if (isLastKnown) {
-                     popupContent = `
-                        <div class="popup-header" style="background-color: ${teamColor || '#999'};">
-                            <span>${firstName} ${lastName}</span>
-                        </div>
-                        <div class="popup-body">
-                            <strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br>
-                            <strong>Last Known Location</strong>
-                        </div>
-                         <div class="popup-footer">
-                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
-                        </div>
-                    `;
+                     popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`;
                 } else {
                     const batteryIcon = isCharging ? '⚡' : '🔋';
                     const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`;
                     let roleLabel = '';
                     if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>';
                     else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>';
-                    popupContent = `
-                        <div class="popup-header" style="background-color: ${teamColor || '#3388ff'};">
-                            <span>${firstName} ${lastName}</span>
-                            ${roleLabel}
-                        </div>
-                        <div class="popup-body">
-                            <strong>Team:</strong> ${teamName || 'N/A'}<br>
-                            <strong>Speed:</strong> ${speed.toFixed(1)} m/s<br>
-                            <strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br>
-                            <strong>Battery:</strong> ${batteryStatus}<br>
-                        </div>
-                        <div class="popup-actions">
-                            <button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button>
-                        </div>
-                        <div class="popup-footer">
-                            Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}
-                        </div>
-                    `;
+                    popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body"><strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`;
                 }
 
                 const isStealthed = statusType === 'stealthed';
@@ -353,25 +439,193 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
             }
         });
 
-        document.querySelector('.subtitle').textContent = `Tracking ${markers.getLayers().length} players on map.`;
+        // Update tracking count subtitle
+        const currentlyTracked = markers.getLayers().length;
+        if (document.querySelector('.subtitle').textContent !== 'Connecting...' && document.querySelector('.subtitle').textContent !== 'Authenticating...') {
+            document.querySelector('.subtitle').textContent = `Tracking ${currentlyTracked} players on map.`;
+        }
 
-        if (markers.getLayers().length === 0 && lowerCaseSearchTerm) {
-            findAndExpandList(lowerCaseSearchTerm);
+
+        if (markers.getLayers().length === 0 && searchTerms.length > 0) {
+            findAndExpandList(searchTerms[0]); // Just use the first term to find in lists
         } else {
             document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
         }
-
-        if (lowerCaseSearchTerm && foundPlayerCoords.length > 0) {
-            if (foundPlayerCoords.length > 1) map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50] });
-            else if (foundPlayerCoords.length === 1) map.setView(foundPlayerCoords[0], 16);
-        } else if (initialLoad && allPlayersWithLocation.length > 0) {
-            const initialCoords = allPlayersWithLocation.filter(p => {
-                 return showAllPlayers || p.role === 'teammate' || p.role === 'target';
-            }).map(p => L.latLng(p.lat, p.lng));
-            if (initialCoords.length > 0) map.fitBounds(L.latLngBounds(initialCoords), { padding: [50, 50] });
+        
+        if (shouldFitBounds) {
+            if (searchTerms.length > 0 && foundPlayerCoords.length > 0) {
+                if (foundPlayerCoords.length > 1) {
+                    map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 });
+                } else {
+                    map.setView(foundPlayerCoords[0], 16);
+                }
+            } else { // Handle initial load or clearing search
+                const allVisibleCoords = allPlayersWithLocation
+                    .filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target')
+                    .map(p => L.latLng(p.lat, p.lng));
+                
+                if (allVisibleCoords.length > 0) {
+                    map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] });
+                }
+            }
         }
+        
         for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; }
     }
+    
+    // --- NEW: Notification Modal Logic ---
+     function setupNotificationModal(teammates, isMaster = false) {
+        const modalOverlay = document.getElementById('notification-modal-overlay');
+        const openBtn = document.getElementById('notification-btn');
+        const closeBtn = document.getElementById('modal-close-btn');
+        const playerSelectionStep = document.getElementById('player-selection-step');
+        const settingsStep = document.getElementById('notification-settings-step');
+        const teammateList = document.getElementById('teammate-list');
+        const myPlayerNameSpan = document.getElementById('my-player-name');
+        const changePlayerLink = document.getElementById('change-player-link');
+        const saveBtn = document.getElementById('save-settings-btn');
+        const settingsTitle = settingsStep.querySelector('h2');
+
+        // References to specific settings rows to hide them for master
+        const proximitySettingRow = document.querySelector('#proximity-radius').closest('.setting-row');
+        
+        // --- MASTER USER SETUP ---
+        if (isMaster) {
+            const showMasterSettings = () => {
+                playerSelectionStep.style.display = 'none';
+                settingsStep.style.display = 'block';
+                settingsTitle.textContent = 'Master Notification Settings';
+                changePlayerLink.style.display = 'none';
+                proximitySettingRow.style.display = 'none'; // Proximity is irrelevant for master
+                loadSettings(true);
+            };
+            
+            openBtn.onclick = () => {
+                modalOverlay.style.display = 'flex';
+                showMasterSettings();
+            };
+
+        } 
+        // --- REGULAR USER SETUP ---
+        else {
+            teammateList.innerHTML = '';
+            teammates.forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = player.name;
+                li.dataset.id = player.id;
+                li.onclick = () => {
+                    localStorage.setItem('myPlayerId', player.id);
+                    localStorage.setItem('myPlayerName', player.name);
+                    showRegularUserSettings(player.name);
+                };
+                teammateList.appendChild(li);
+            });
+
+            const showRegularUserSettings = (playerName) => {
+                playerSelectionStep.style.display = 'none';
+                settingsStep.style.display = 'block';
+                settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`;
+                changePlayerLink.style.display = 'inline';
+                proximitySettingRow.style.display = 'block';
+                loadSettings(false);
+            };
+            
+            openBtn.onclick = () => {
+                modalOverlay.style.display = 'flex';
+                const myPlayerId = localStorage.getItem('myPlayerId');
+                const myPlayerName = localStorage.getItem('myPlayerName');
+                if (myPlayerId && myPlayerName) {
+                    showRegularUserSettings(myPlayerName);
+                } else {
+                    playerSelectionStep.style.display = 'block';
+                    settingsStep.style.display = 'none';
+                }
+            };
+
+            changePlayerLink.onclick = (e) => {
+                e.preventDefault();
+                localStorage.removeItem('myPlayerId');
+                localStorage.removeItem('myPlayerName');
+                playerSelectionStep.style.display = 'block';
+                settingsStep.style.display = 'none';
+            };
+        }
+
+        const closeModal = () => modalOverlay.style.display = 'none';
+        closeBtn.onclick = closeModal;
+        modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); };
+        
+        // --- COMMON SETTINGS LOGIC ---
+        const enableNotifications = document.getElementById('enable-notifications');
+        const fieldset = document.getElementById('notification-fieldset');
+        const proximitySlider = document.getElementById('proximity-radius');
+        const proximityValue = document.getElementById('proximity-value');
+        const ghostSlider = document.getElementById('ghost-radius');
+        const ghostValue = document.getElementById('ghost-value');
+        const ghostWorldwide = document.getElementById('ghost-worldwide');
+
+        enableNotifications.onchange = () => {
+            fieldset.disabled = !enableNotifications.checked;
+            if (enableNotifications.checked && Notification.permission !== 'granted') {
+                Notification.requestPermission();
+            }
+        };
+
+        proximitySlider.oninput = () => {
+            proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off';
+        };
+        ghostSlider.oninput = () => {
+            ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off';
+        };
+        ghostWorldwide.onchange = () => {
+            ghostSlider.disabled = ghostWorldwide.checked;
+            ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off');
+        };
+
+        function loadSettings(forMaster = false) {
+            const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {};
+            enableNotifications.checked = settings.enabled || false;
+            
+            if (forMaster) {
+                // Master only has worldwide ghost alerts
+                ghostWorldwide.checked = true;
+                ghostSlider.value = 0;
+            } else {
+                proximitySlider.value = settings.proximityMiles || 0;
+                ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
+                ghostWorldwide.checked = settings.ghostMiles === -1;
+            }
+            
+            proximitySlider.dispatchEvent(new Event('input'));
+            ghostSlider.dispatchEvent(new Event('input'));
+            ghostWorldwide.dispatchEvent(new Event('change'));
+            enableNotifications.dispatchEvent(new Event('change'));
+        }
+
+        saveBtn.onclick = () => {
+            const myPlayerId = localStorage.getItem('myPlayerId');
+            if (!isMaster && !myPlayerId) {
+                alert("Please select your player profile first.");
+                return;
+            }
+            
+            const settings = {
+                myPlayerId: isMaster ? null : myPlayerId,
+                enabled: enableNotifications.checked,
+                // Master does not have proximity alerts
+                proximityMiles: isMaster ? 0 : parseFloat(proximitySlider.value),
+                // Master can only have worldwide ghost alerts
+                ghostMiles: isMaster || ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value)
+            };
+            
+            localStorage.setItem('notificationSettings', JSON.stringify(settings));
+            socket.emit('update_notification_settings', settings);
+            
+            closeModal();
+            alert('Settings saved!');
+        };
+    }
+
     
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
     
