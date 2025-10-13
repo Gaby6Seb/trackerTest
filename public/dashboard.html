@@ -622,7 +622,7 @@
                alert('Settings saved!');
             }
         };
-    } // <-- FIX: This closing brace was missing
+    } // <-- This closing brace is the critical syntax fix.
 
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
     
