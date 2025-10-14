@@ -97,22 +97,27 @@ app.use(
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "'unsafe-inline'",
+        "'unsafe-inline'", // Allows your inline <script> tags
         "https://cdn.onesignal.com",
-        "https://api.onesignal.com", // <-- ADD THIS for OneSignal API scripts
+        "https://api.onesignal.com",
         "https://unpkg.com",
         "https://cdnjs.cloudflare.com",
       ],
-      workerSrc: ["'self'", "https://cdn.onesignal.com"],
+      workerSrc: [
+          "'self'", 
+          "blob:", // Important for some worker initializations
+          "https://cdn.onesignal.com"
+      ],
       styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
       imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"],
+      frameSrc: ["'self'", "https://onesignal.com"], // <-- ADD THIS for OneSignal iframes
       connectSrc: [
         "'self'",
-        "https://trackertert-production-6d3f.up.railway.app", // Your production domain
-        "wss://trackertest-production-6d3f.up.railway.app",  // Your WebSocket domain
+        "https://trackertest-production-6d3f.up.railway.app",  // <-- TYPO FIXED HERE
+        "wss://trackertest-production-6d3f.up.railway.app",
         "https://onesignal.com",
-        "https://api.onesignal.com", // <-- ADD THIS for OneSignal API connections
-        "https://erspvsdfwaqjtuhymubj.supabase.co", // <-- ADD THIS for Supabase API/Auth
+        "https://api.onesignal.com",
+        "https://erspvsdfwaqjtuhymubj.supabase.co",
       ],
     },
   })
@@ -665,6 +670,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
