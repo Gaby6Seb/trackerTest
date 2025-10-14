@@ -20,7 +20,53 @@
   
 </head>
 <body>
-  <!-- ... your existing body HTML ... -->
+  <div class="header">
+    <div class="header-content">
+        <h1>Splashin' Live Dashboard</h1>
+        <p class="subtitle">Connecting...</p>
+    </div>
+    <div class="user-info">
+        <button id="notification-btn" style="display: none;">🔔</button>
+        <span id="display-name"></span>
+        <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="controls-container">
+    <div id="search-container">
+        <input type="text" id="player-search" placeholder="Search names or teams (e.g., John, Blue Team)...">
+        <button id="clear-search-btn">&times;</button>
+    </div>
+    <div id="filter-toggles">
+      <label for="show-all-toggle">
+        <input type="checkbox" id="show-all-toggle">
+        Show All Players
+      </label>
+    </div>
+    <div id="safezone-container" class="minimized">
+        <h2 id="safezone-header">
+            Players in Safe Zone
+            <span id="safezone-toggle-icon">+</span>
+        </h2>
+        <ul id="safezone-list"></ul>
+    </div>
+    <div id="stealth-container" class="minimized">
+        <h2 id="stealth-header">
+            Stealthed Players
+            <span id="stealth-toggle-icon">+</span>
+        </h2>
+        <ul id="stealth-list"></ul>
+    </div>
+    <div id="not-located-container" class="minimized">
+        <h2 id="not-located-header">
+            Players Not on Map
+            <span id="toggle-icon">+</span>
+        </h2>
+        <ul id="not-located-list"></ul>
+    </div>
+  </div>
+
+  <!-- Notification Modal -->
   <div id="notification-modal-overlay" class="modal-overlay" style="display: none;">
     <div id="notification-modal" class="modal-content">
         <button id="modal-close-btn" class="modal-close-btn">&times;</button>
@@ -107,8 +153,7 @@
         });
     });
 
-    // --- Login Authentication Guard and other functions remain the same ---
-    // ...
+    // --- Login Authentication Guard ---
     const username = localStorage.getItem('username');
     const isMaster = localStorage.getItem('isMaster') === 'true';
     const displayName = localStorage.getItem('displayName');
@@ -449,7 +494,6 @@
         });
     }
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ FIX START ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
     function checkSubscriptionStatus() {
          OneSignalDeferred.push(async function(OneSignal) {
             // Defensively check if the push subscription object exists before using it
@@ -465,24 +509,6 @@
                 return;
             }
 
-            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
-            
-            subscribeContainer.innerHTML = '';
-            const button = document.createElement('button');
-            if (isSubscribed) {
-                button.textContent = 'Unsubscribe from Push Notifications';
-                button.onclick = handleUnsubscribeClick;
-                button.className = 'unsubscribe-btn';
-            } else {
-                button.textContent = 'Subscribe to Push Notifications';
-                button.onclick = handleSubscribeClick;
-                button.className = 'subscribe-btn';
-            }
-            subscribeContainer.appendChild(button);
-        });
-    }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-    
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
