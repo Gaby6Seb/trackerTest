@@ -513,35 +513,38 @@ OneSignalDeferred.push(() => initializeOneSignal());
     }
 
     // This function is now robust and handles all user states correctly.
-    function checkSubscriptionStatus() {
-         OneSignalDeferred.push(async function(OneSignal) {
-            subscribeContainer.innerHTML = '';
-            const button = document.createElement('button');
+function checkSubscriptionStatus() {
+    OneSignalDeferred.push(async function(OneSignal) {
+        subscribeContainer.innerHTML = '';
+        const button = document.createElement('button');
 
-            // This is the key: Check if the pushSubscription object exists.
-            if (OneSignal.User.pushSubscription) {
-                // The user has been prompted before. We can check their status.
-                const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
-                if (isSubscribed) {
-                    button.textContent = 'Unsubscribe from Push Notifications';
-                    button.onclick = handleUnsubscribeClick;
-                    button.className = 'unsubscribe-btn';
-                } else {
-                    // The user has blocked notifications or opted out.
-                    button.textContent = 'Subscribe to Push Notifications';
-                    button.onclick = handleSubscribeClick;
-                    button.className = 'subscribe-btn';
-                }
+        // Check notification permission status
+        const permission = await OneSignal.Notifications.permission;
+        if (permission === 'denied') {
+            button.textContent = 'Enable Notifications (Blocked)';
+            button.onclick = () => {
+                alert('Notifications are blocked. Please enable them in your browser settings and try again.');
+            };
+            button.className = 'subscribe-btn disabled';
+        } else if (OneSignal.User.pushSubscription) {
+            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+            if (isSubscribed) {
+                button.textContent = 'Unsubscribe from Push Notifications';
+                button.onclick = handleUnsubscribeClick;
+                button.className = 'unsubscribe-btn';
             } else {
-                // This is a brand new user who has never been prompted.
-                // Their only option is to subscribe for the first time.
                 button.textContent = 'Subscribe to Push Notifications';
                 button.onclick = handleSubscribeClick;
                 button.className = 'subscribe-btn';
             }
-            subscribeContainer.appendChild(button);
-        });
-    }
+        } else {
+            button.textContent = 'Subscribe to Push Notifications';
+            button.onclick = handleSubscribeClick;
+            button.className = 'subscribe-btn';
+        }
+        subscribeContainer.appendChild(button);
+    });
+}
 
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
@@ -675,6 +678,7 @@ OneSignalDeferred.push(() => initializeOneSignal());
 
 </body>
 </html>
+
 
 
 
