@@ -127,19 +127,29 @@
             appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
             allowLocalhostAsSecureOrigin: true,
         }).then(() => {
-            console.log("OneSignal SDK Initialized.");
-            OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
-                console.log('Push subscription state changed:', isSubscribed);
-                if (isSubscribed) {
-                    const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
-                    if (oneSignalPlayerId) {
-                        socket.emit('register_one_signal', oneSignalPlayerId);
+            console.log("OneSignal SDK Initialized successfully.");
+            if (OneSignal.User.pushSubscription) {
+                OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
+                    console.log('Push subscription state changed:', isSubscribed);
+                    if (isSubscribed) {
+                        const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
+                        if (oneSignalPlayerId) {
+                            socket.emit('register_one_signal', oneSignalPlayerId);
+                        }
                     }
-                }
-                if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
-                    checkSubscriptionStatus();
-                }
-            });
+                    if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
+                        checkSubscriptionStatus();
+                    }
+                });
+            } else {
+                 console.warn("Push subscriptions are not supported or available on this browser.");
+                 const notifBtn = document.getElementById('notification-btn');
+                 if (notifBtn) notifBtn.style.display = 'none';
+            }
+        }).catch((error) => {
+            console.error("OneSignal SDK initialization failed:", error);
+            const notifBtn = document.getElementById('notification-btn');
+            if (notifBtn) notifBtn.style.display = 'none';
         });
     });
 
@@ -267,7 +277,6 @@
       ];
       allPanelData = data;
 
-      // REFINED: Use a loop to populate all lists and handle empty states
       const listMapping = [
         { containerId: 'safezone-container', listId: 'safezone-list', data: data.safeZone },
         { containerId: 'stealth-container', listId: 'stealth-list', data: data.stealthed },
@@ -277,8 +286,8 @@
       listMapping.forEach(({ containerId, listId, data: players, reasonKey }) => {
           const container = document.getElementById(containerId);
           const list = document.getElementById(listId);
-          list.innerHTML = ''; // Clear previous entries
-          container.style.display = 'flex'; // Always show the container
+          list.innerHTML = ''; 
+          container.style.display = 'flex';
 
           if (players && players.length > 0) {
               players.sort((a, b) => a.firstName.localeCompare(b.firstName)).forEach(player => {
@@ -300,7 +309,6 @@
                   list.appendChild(listItem);
               });
           } else {
-              // FIXED: Show a message when the list is empty
               list.innerHTML = `<li class="empty-list-message">No players in this category.</li>`;
           }
       });
@@ -314,7 +322,6 @@
     socket.on('ghost_alert', (data) => console.log('Ghost Alert:', data));
     function panToLastLocation(lat, lng) { map.setView([lat, lng], 17); }
 
-    // FIXED: Restored function logic
     function expandPanel(containerId) {
         const container = document.getElementById(containerId);
         if (container && container.classList.contains('minimized')) {
@@ -324,7 +331,6 @@
         }
     }
 
-    // FIXED: Restored function logic
     function findAndExpandList(searchTerm) {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted'));
@@ -377,7 +383,6 @@
         window.open(url, '_blank');
     }
 
-    // FIXED: Restored function logic with a small UX improvement
     function filterMarkers(searchTerm, shouldFitBounds = false) {
         markers.clearLayers(); 
         const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
@@ -444,7 +449,6 @@
                     map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 });
                 } else {
                     map.setView(foundPlayerCoords[0], 16);
-                    // IMPROVEMENT: Automatically open the popup if it's a single search result
                     if (updatedUids.size === 1) {
                         const singleMarker = currentMarkers[updatedUids.values().next().value];
                         if (singleMarker) {
@@ -492,7 +496,8 @@
 
     function checkSubscriptionStatus() {
          OneSignalDeferred.push(async function(OneSignal) {
-            const isSubscribed = OneSignal.User.pushSubscription.optedIn;
+            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+            
             subscribeContainer.innerHTML = '';
             const button = document.createElement('button');
             if (isSubscribed) {
@@ -508,7 +513,6 @@
         });
     }
 
-    // FIXED: Restored function logic
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
@@ -588,7 +592,7 @@
 
         function loadSettings() {
             const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {};
-            enableNotifications.checked = settings.enabled || false;
+            enableNotifications.checked = settings.hasOwnProperty('enabled') ? settings.enabled : true;
             proximitySlider.value = settings.proximityMiles || 0;
             ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0;
             ghostWorldwide.checked = settings.ghostMiles === -1;
@@ -624,7 +628,6 @@
 
     socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
     
-    // FIXED: Restored function logic
     const setupCollapsiblePanel = (headerId, containerId, iconId) => {
         const header = document.getElementById(headerId);
         const container = document.getElementById(containerId);
