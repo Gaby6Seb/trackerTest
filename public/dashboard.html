@@ -167,6 +167,11 @@ function initializeOneSignal(retries = 3, delay = 2000) {
             document.getElementById('notification-btn').style.display = 'none';
         }
     }
+	// Inside initializeOneSignal, after OneSignal.init
+OneSignal.Notifications.addEventListener('permissionChange', (permission) => {
+    console.log('Notification permission changed:', permission);
+    checkSubscriptionStatus();
+});
 }
 
 window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -678,6 +683,7 @@ function checkSubscriptionStatus() {
 
 </body>
 </html>
+
 
 
 
