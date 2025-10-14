@@ -474,13 +474,13 @@
     
     function handleSubscribeClick() {
         OneSignalDeferred.push(function(OneSignal) {
+            // optIn() will show the native browser prompt to new users.
             OneSignal.User.pushSubscription.optIn().then(() => {
-                 alert('Subscribed to notifications successfully!');
-                 checkSubscriptionStatus();
+                 console.log('User successfully opted in.');
+                 // The 'change' event listener will handle the rest.
             }).catch((error) => {
-                 alert('There was an issue subscribing to notifications. Please check browser permissions.');
+                 alert('There was an issue subscribing. Please check browser permissions in the address bar.');
                  console.error('Subscription error:', error);
-                 checkSubscriptionStatus();
             });
         });
     }
@@ -488,36 +488,34 @@
     function handleUnsubscribeClick() {
         OneSignalDeferred.push(function(OneSignal) {
              OneSignal.User.pushSubscription.optOut().then(() => {
-                alert('Unsubscribed from notifications.');
-                checkSubscriptionStatus();
+                console.log('User successfully opted out.');
              });
         });
     }
 
+    // This function is now robust and handles all user states correctly.
     function checkSubscriptionStatus() {
          OneSignalDeferred.push(async function(OneSignal) {
-            // Defensively check if the push subscription object exists before using it
-            if (!OneSignal.User.pushSubscription) {
-                subscribeContainer.innerHTML = '<p>Push notifications are not yet enabled. Please subscribe first.</p>';
-                // We can also trigger the prompt here if the user clicks the bell
-                // but doesn't have a subscription yet.
-                const button = document.createElement('button');
-                button.textContent = 'Subscribe to Push Notifications';
-                button.onclick = handleSubscribeClick;
-                button.className = 'subscribe-btn';
-                subscribeContainer.appendChild(button);
-                return;
-            }
-
-            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
-            
             subscribeContainer.innerHTML = '';
             const button = document.createElement('button');
-            if (isSubscribed) {
-                button.textContent = 'Unsubscribe from Push Notifications';
-                button.onclick = handleUnsubscribeClick;
-                button.className = 'unsubscribe-btn';
+
+            // This is the key: Check if the pushSubscription object exists.
+            if (OneSignal.User.pushSubscription) {
+                // The user has been prompted before. We can check their status.
+                const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+                if (isSubscribed) {
+                    button.textContent = 'Unsubscribe from Push Notifications';
+                    button.onclick = handleUnsubscribeClick;
+                    button.className = 'unsubscribe-btn';
+                } else {
+                    // The user has blocked notifications or opted out.
+                    button.textContent = 'Subscribe to Push Notifications';
+                    button.onclick = handleSubscribeClick;
+                    button.className = 'subscribe-btn';
+                }
             } else {
+                // This is a brand new user who has never been prompted.
+                // Their only option is to subscribe for the first time.
                 button.textContent = 'Subscribe to Push Notifications';
                 button.onclick = handleSubscribeClick;
                 button.className = 'subscribe-btn';
@@ -658,5 +656,6 @@
 
 </body>
 </html>
+
 
 
