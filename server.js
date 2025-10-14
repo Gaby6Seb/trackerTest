@@ -233,7 +233,21 @@ app.post('/logout', (req, res) => {
     }
     res.status(200).json({ message: 'Logged out successfully' });
 });
+app.post('/test-notification', (req, res) => {
+    const { socketId } = req.body;
+    if (!socketId) {
+        return res.status(400).json({ message: 'Socket ID is required' });
+    }
 
+    const socket = io.sockets.sockets.get(socketId);
+    if (!socket || !socket.data.oneSignalPlayerId) {
+        return res.status(400).json({ message: 'Invalid socket ID or no OneSignal player ID registered' });
+    }
+
+    sendPushNotification([socket.data.oneSignalPlayerId], 'Test Notification', 'This is a test notification from the server.')
+        .then(() => res.json({ message: 'Test notification sent' }))
+        .catch(err => res.status(500).json({ message: 'Failed to send test notification', error: err.message }));
+});
 // --- API Configuration ---
 const SUPABASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co";
 const SPLASHIN_API_URL = "https://splashin.app/api/v3";
@@ -697,6 +711,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
