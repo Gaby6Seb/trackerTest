@@ -97,20 +97,20 @@ app.use(
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "https://cdn.onesignal.com", // Allow OneSignal SDK
-        "https://unpkg.com",         // Allow Leaflet
-        "https://cdnjs.cloudflare.com", // Allow Socket.IO client
+        "'unsafe-inline'", // <-- ADD THIS LINE to allow your inline scripts
+        "https://cdn.onesignal.com",
+        "https://unpkg.com",
+        "https://cdnjs.cloudflare.com",
       ],
-      workerSrc: ["'self'", "https://cdn.onesignal.com"], // Allow OneSignal Service Worker
-      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"], // Allow Leaflet CSS and inline styles
-      imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"], // Allow map tiles and avatars
+      workerSrc: ["'self'", "https://cdn.onesignal.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"],
       connectSrc: [
         "'self'",
-        "https://trackertest-production-6d3f.up.railway.app", // Your production domain for Socket.IO
-        "wss://trackertest-production-6d3f.up.railway.app", // WebSocket connection
+        "https://trackertest-production-6d3f.up.railway.app",
+        "wss://trackertest-production-6d3f.up.railway.app",
         "https://onesignal.com"
       ],
-      // Add other directives as needed
     },
   })
 );
@@ -662,5 +662,6 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
