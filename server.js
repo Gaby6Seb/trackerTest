@@ -9,24 +9,30 @@ const OneSignal = require('@onesignal/node-onesignal');
 const helmet = require('helmet');
 
 // --- OneSignal Configuration ---
+// --- OneSignal Configuration ---
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
 let oneSignalClient = null;
 if (ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY) {
-    const configuration = OneSignal.createConfiguration({
-        authMethods: {
-            app_key: {
-                tokenProvider: {
-                    getToken() {
-                        return ONESIGNAL_REST_API_KEY;
+    try {
+        const configuration = OneSignal.createConfiguration({
+            authMethods: {
+                app_key: {
+                    tokenProvider: {
+                        getToken() {
+                            return ONESIGNAL_REST_API_KEY;
+                        }
                     }
                 }
             }
-        }
-    });
-    oneSignalClient = new OneSignal.DefaultApi(configuration);
-    console.log("OneSignal client configured successfully.");
+        });
+        oneSignalClient = new OneSignal.DefaultApi(configuration);
+        console.log("OneSignal client configured successfully.");
+    } catch (err) {
+        console.error("Failed to initialize OneSignal client:", err.message);
+        oneSignalClient = null;
+    }
 } else {
     console.warn("OneSignal environment variables not set. Push notifications will be disabled.");
 }
@@ -353,8 +359,11 @@ async function resolveReferenceLogin(loginDetails) {
 }
 
 // --- Notification Processing Logic ---
-async function sendPushNotification(playerIds, heading, content) {
-    if (!oneSignalClient || playerIds.length === 0) return;
+async function sendPushNotification(playerIds, heading, content, retries = 3, delay = 2000) {
+    if (!oneSignalClient || playerIds.length === 0 || !playerIds.every(id => typeof id === 'string' && id)) {
+        console.warn("Cannot send push notification: Invalid client or player IDs", { playerIds });
+        return;
+    }
 
     const notification = {
         app_id: ONESIGNAL_APP_ID,
@@ -363,11 +372,21 @@ async function sendPushNotification(playerIds, heading, content) {
         contents: { en: content },
     };
 
-    try {
-        console.log(`Sending push notification to ${playerIds.length} player(s)...`);
-        await oneSignalClient.createNotification(notification);
-    } catch (e) {
-        console.error("Error sending OneSignal push notification:", e.body);
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`Sending push notification to ${playerIds.length} player(s), attempt ${attempt}...`);
+            const response = await oneSignalClient.createNotification(notification);
+            console.log(`Push notification sent successfully: ${JSON.stringify(response)}`);
+            return;
+        } catch (e) {
+            console.error(`Error sending OneSignal push notification (attempt ${attempt}):`, e.body || e.message);
+            if (attempt < retries) {
+                console.log(`Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.error("Failed to send push notification after all retries:", e.body || e.message);
+            }
+        }
     }
 }
 
@@ -638,12 +657,16 @@ io.on('connection', (socket) => {
         socket.data.playersInRange = new Set();
     });
     
-    socket.on('register_one_signal', (oneSignalPlayerId) => {
-        if (oneSignalPlayerId) {
-            socket.data.oneSignalPlayerId = oneSignalPlayerId;
-            console.log(`[${socket.data.username || socket.id}] registered for push notifications with ID: ${oneSignalPlayerId}`);
-        }
-    });
+socket.on('register_one_signal', (oneSignalPlayerId) => {
+    if (oneSignalPlayerId && typeof oneSignalPlayerId === 'string') {
+        socket.data.oneSignalPlayerId = oneSignalPlayerId;
+        console.log(`[${socket.data.username || socket.id}] registered for push notifications with ID: ${oneSignalPlayerId}`);
+        socket.emit('one_signal_registration_success', { playerId: oneSignalPlayerId });
+    } else {
+        console.warn(`[${socket.data.username || socket.id}] attempted to register invalid OneSignal player ID: ${oneSignalPlayerId}`);
+        socket.emit('one_signal_registration_error', { message: 'Invalid OneSignal player ID' });
+    }
+});
 
     socket.on('disconnect', () => {
         console.log(`User ${socket.data.username || 'unauthenticated'} disconnected. Total clients: ${io.engine.clientsCount}`);
@@ -674,6 +697,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
