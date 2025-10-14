@@ -97,8 +97,9 @@ app.use(
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "'unsafe-inline'", // <-- ADD THIS LINE to allow your inline scripts
+        "'unsafe-inline'",
         "https://cdn.onesignal.com",
+        "https://api.onesignal.com", // <-- ADD THIS for OneSignal API scripts
         "https://unpkg.com",
         "https://cdnjs.cloudflare.com",
       ],
@@ -107,9 +108,11 @@ app.use(
       imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"],
       connectSrc: [
         "'self'",
-        "https://trackertest-production-6d3f.up.railway.app",
-        "wss://trackertest-production-6d3f.up.railway.app",
-        "https://onesignal.com"
+        "https://trackertert-production-6d3f.up.railway.app", // Your production domain
+        "wss://trackertest-production-6d3f.up.railway.app",  // Your WebSocket domain
+        "https://onesignal.com",
+        "https://api.onesignal.com", // <-- ADD THIS for OneSignal API connections
+        "https://erspvsdfwaqjtuhymubj.supabase.co", // <-- ADD THIS for Supabase API/Auth
       ],
     },
   })
@@ -662,6 +665,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
