@@ -509,6 +509,23 @@
                 return;
             }
 
+            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+            
+            subscribeContainer.innerHTML = '';
+            const button = document.createElement('button');
+            if (isSubscribed) {
+                button.textContent = 'Unsubscribe from Push Notifications';
+                button.onclick = handleUnsubscribeClick;
+                button.className = 'unsubscribe-btn';
+            } else {
+                button.textContent = 'Subscribe to Push Notifications';
+                button.onclick = handleSubscribeClick;
+                button.className = 'subscribe-btn';
+            }
+            subscribeContainer.appendChild(button);
+        });
+    }
+
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
         const openBtn = document.getElementById('notification-btn');
@@ -641,4 +658,5 @@
 
 </body>
 </html>
+
 
