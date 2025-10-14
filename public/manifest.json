@@ -1,9 +1,10 @@
 {
   "name": "Splashin' Live Dashboard",
   "short_name": "Splashin'",
-  "start_url": "/dashboard.html",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#222222",
   "theme_color": "#3388ff",
-  "icons": []
+  "description": "Live player tracking dashboard for Splashin'.",
 }
