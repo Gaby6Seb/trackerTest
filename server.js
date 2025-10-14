@@ -238,13 +238,9 @@ function loadMapFromFile() {
 }
 
 // --- Data Filtering & Resolution Logic ---
-// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-// CORRECTED: This function now correctly processes roles for master users.
 function filterDataForUser(fullData, userFilterConfig) {
     const myTeamId = userFilterConfig.myTeamId;
     const targetTeamIds = userFilterConfig.targetTeamIds || new Set();
-
-    // A master user or a user with canSeeAllPlayers should not have players filtered out.
     const shouldFilterByTeam = !userFilterConfig.isMaster && !userFilterConfig.canSeeAllPlayers;
 
     const processPlayers = (players) => {
@@ -256,7 +252,6 @@ function filterDataForUser(fullData, userFilterConfig) {
             processed = processed.filter(p => allowedTeamIds.has(p.teamId));
         }
 
-        // Always re-map roles based on the logged-in user's perspective.
         return processed.map(p => {
             let role = 'neutral';
             if (p.teamId === myTeamId) {
@@ -285,7 +280,6 @@ function filterDataForUser(fullData, userFilterConfig) {
     }
     return result;
 }
-// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 async function resolveReferenceLogin(loginDetails) {
     console.log(`Attempting to resolve team/target info for login: ${loginDetails.email}`);
@@ -440,7 +434,6 @@ async function runApiRequests() {
         const targets = dashboardResponse.data.targets || [];
         const myTeam = dashboardResponse.data.myTeam || [];
         
-        // This is the server's perspective
         if (myTeam.length > 0 && myTeam[0].team_id) masterTeamId = myTeam[0].team_id;
         masterTargetIds = new Set(targets.map(p => p.team_id).filter(Boolean));
 
@@ -546,8 +539,6 @@ async function runApiRequests() {
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
 
-    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-    // CORRECTED: This logic is now unified for master and regular users.
     socket.on('authenticate', async (data) => {
         const username = data.username;
         const userConfig = loginConfigs[username];
@@ -563,7 +554,6 @@ io.on('connection', (socket) => {
         let resolvedIds = null;
         let teammates = [];
 
-        // Attempt to resolve team info for ANY user that has it configured.
         if (userConfig.reference_login) {
             console.log(`[${username}] Using reference login to resolve team info...`);
             resolvedIds = await resolveReferenceLogin(userConfig.reference_login);
@@ -571,8 +561,6 @@ io.on('connection', (socket) => {
             console.log(`[${username}] Using direct ID configuration.`);
             resolvedIds = { myTeamId: userConfig.team_id, targetTeamIds: new Set(userConfig.target_team_ids || []) };
         } else {
-            // Fallback for users (like a master user) without specific team info.
-            // They will see roles from the server's main account perspective.
             console.log(`[${username}] No specific team config found. Using server default perspective.`);
             resolvedIds = { myTeamId: masterTeamId, targetTeamIds: masterTargetIds };
         }
@@ -583,7 +571,6 @@ io.on('connection', (socket) => {
             return socket.disconnect();
         }
 
-        // Build the final filter configuration.
         const filterConfig = {
             isMaster: !!userConfig.isMaster,
             myTeamId: resolvedIds.myTeamId,
@@ -593,7 +580,6 @@ io.on('connection', (socket) => {
         };
         socket.data.filterConfig = filterConfig;
 
-        // Populate the teammate list for the notification modal.
         if ((!!userConfig.isMaster || !!userConfig.canUseNotifications) && lastRichDataMap.size > 0) {
             for (const player of lastRichDataMap.values()) {
                 if (player.team_id === resolvedIds.myTeamId) {
@@ -609,7 +595,6 @@ io.on('connection', (socket) => {
             socket.emit('locationUpdate', userData);
         }
     });
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     socket.on('update_notification_settings', (settings) => {
         console.log(`[${socket.data.username}] updated notification settings:`, settings);
@@ -629,11 +614,27 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Server listening on http://localhost:${PORT}`);
+// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ FIX START ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+// Wrap the server startup in an async function to fix the race condition.
+async function startServer() {
+    console.log("Starting server...");
     loadMapFromFile();
     loadTokensFromFile();
-    console.log("Starting continuous API fetch interval.");
-    runApiRequests();
+
+    console.log("Performing initial API data fetch before accepting connections...");
+    // By awaiting the first run, we ensure lastRichDataMap is populated
+    // before any client can connect and authenticate.
+    await runApiRequests(); 
+
+    // Now that we have data, we can start the recurring fetch interval.
     setInterval(runApiRequests, FETCH_INTERVAL_MS);
-});
+
+    // And finally, start listening for connections.
+    server.listen(PORT, () => {
+        console.log(`Server is ready and listening on http://localhost:${PORT}`);
+    });
+}
+
+// Execute the startup function.
+startServer();
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
