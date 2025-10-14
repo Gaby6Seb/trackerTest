@@ -496,18 +496,22 @@
 
     function checkSubscriptionStatus() {
          OneSignalDeferred.push(async function(OneSignal) {
-            // Defensively check if the push subscription object exists before using it
-            if (!OneSignal.User.pushSubscription) {
-                subscribeContainer.innerHTML = '<p>Push notifications are not yet enabled. Please subscribe first.</p>';
-                // We can also trigger the prompt here if the user clicks the bell
-                // but doesn't have a subscription yet.
-                const button = document.createElement('button');
+            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+            
+            subscribeContainer.innerHTML = '';
+            const button = document.createElement('button');
+            if (isSubscribed) {
+                button.textContent = 'Unsubscribe from Push Notifications';
+                button.onclick = handleUnsubscribeClick;
+                button.className = 'unsubscribe-btn';
+            } else {
                 button.textContent = 'Subscribe to Push Notifications';
                 button.onclick = handleSubscribeClick;
                 button.className = 'subscribe-btn';
-                subscribeContainer.appendChild(button);
-                return;
             }
+            subscribeContainer.appendChild(button);
+        });
+    }
 
     function setupNotificationModal(teammates) {
         const modalOverlay = document.getElementById('notification-modal-overlay');
