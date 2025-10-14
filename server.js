@@ -8,8 +8,8 @@ const crypto = require('crypto');
 const OneSignal = require('@onesignal/node-onesignal');
 
 // --- OneSignal Configuration ---
-const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID || "95e17686-f5df-4181-a59a-f89457df2973";
-const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY || "os_v2_app_sxqxnbxv35aydjm27ckfpxzjomfttadpbojucjufkbq3psl4gtplmwxjdmqnlpogbp6k4n32ytgx3uy2gatb3hrj5bc3cngyvzzc7ji";
+const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
 let oneSignalClient = null;
 if (ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY) {
@@ -199,8 +199,8 @@ const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
 const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
 const authData = {
-    email: process.env.API_EMAIL || "gabrielpchicas@gmail.com",
-    password: process.env.API_PASSWORD || "Pennyfart12@",
+    email: process.env.API_EMAIL,
+    password: process.env.API_PASSWORD,
     goture_meta_security: {},
 };
 
