@@ -98,39 +98,48 @@ function loadTokensFromFile() {
 // --- Server Setup ---
 const app = express();
 app.use(
-  helmet.contentSecurityPolicy({
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        "https://cdn.onesignal.com",
-        "https://api.onesignal.com",
-        "https://unpkg.com",
-        "https://cdnjs.cloudflare.com",
-      ],
-      workerSrc: ["'self'", "blob:", "https://cdn.onesignal.com"],
-      styleSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        "https://unpkg.com",
-        "https://onesignal.com", // <-- THIS IS THE FINAL FIX
-      ],
-      imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"],
-      frameSrc: ["'self'", "https://onesignal.com"],
-      connectSrc: [
-        "'self'",
-        "https://trackertest-production-6d3f.up.railway.app",
-        "wss://trackertest-production-6d3f.up.railway.app",
-        "https://onesignal.com",
-        "https://api.onesignal.com",
-        "https://erspvsdfwaqjtuhymubj.supabase.co",
-        "https://cdn.onesignal.com",
-        "https://unpkg.com",
-        "https://cdnjs.cloudflare.com",
-      ],
-    },
-  })
+    helmet.contentSecurityPolicy({
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "https://cdn.onesignal.com",
+                "https://api.onesignal.com",
+                "https://*.onesignal.com",
+                "https://unpkg.com",
+                "https://cdnjs.cloudflare.com",
+            ],
+            workerSrc: ["'self'", "blob:", "https://cdn.onesignal.com", "https://*.onesignal.com"],
+            styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "https://unpkg.com",
+                "https://onesignal.com",
+                "https://*.onesignal.com",
+            ],
+            imgSrc: [
+                "'self'",
+                "data:",
+                "https://*.tile.openstreetmap.org",
+                "https://erspvsdfwaqjtuhymubj.supabase.co",
+                "https://*.onesignal.com",
+            ],
+            frameSrc: ["'self'", "https://onesignal.com", "https://*.onesignal.com"],
+            connectSrc: [
+                "'self'",
+                "https://trackertest-production-6d3f.up.railway.app",
+                "wss://trackertest-production-6d3f.up.railway.app",
+                "https://onesignal.com",
+                "https://api.onesignal.com",
+                "https://*.onesignal.com",
+                "https://erspvsdfwaqjtuhymubj.supabase.co",
+                "https://cdn.onesignal.com",
+                "https://unpkg.com",
+                "https://cdnjs.cloudflare.com",
+            ],
+        },
+    })
 );
 app.use(express.json());
 app.use((req, res, next) => {
@@ -711,6 +720,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
