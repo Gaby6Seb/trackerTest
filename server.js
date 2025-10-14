@@ -104,7 +104,12 @@ app.use(
         "https://cdnjs.cloudflare.com",
       ],
       workerSrc: ["'self'", "blob:", "https://cdn.onesignal.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "https://unpkg.com",
+        "https://onesignal.com", // <-- THIS IS THE FINAL FIX
+      ],
       imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"],
       frameSrc: ["'self'", "https://onesignal.com"],
       connectSrc: [
@@ -114,7 +119,7 @@ app.use(
         "https://onesignal.com",
         "https://api.onesignal.com",
         "https://erspvsdfwaqjtuhymubj.supabase.co",
-        "https://cdn.onesignal.com", // This line is critical
+        "https://cdn.onesignal.com",
         "https://unpkg.com",
         "https://cdnjs.cloudflare.com",
       ],
@@ -669,6 +674,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
