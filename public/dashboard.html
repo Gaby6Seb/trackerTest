@@ -120,11 +120,11 @@
 
 
 <script>
-    // --- OneSignal Initialization ---
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(function(OneSignal) {
+// --- OneSignal Initialization ---
+function initializeOneSignal(retries = 3, delay = 2000) {
+    if (window.OneSignal) {
         OneSignal.init({
-            appId: "95e17686-f5df-4181-a59a-f89457df2973", // Public App ID
+            appId: "95e17686-f5df-4181-a59a-f89457df2973",
             allowLocalhostAsSecureOrigin: true,
         }).then(() => {
             console.log("OneSignal SDK Initialized successfully.");
@@ -135,23 +135,42 @@
                         const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
                         if (oneSignalPlayerId) {
                             socket.emit('register_one_signal', oneSignalPlayerId);
+                            console.log('Registered OneSignal player ID:', oneSignalPlayerId);
                         }
                     }
                     if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
                         checkSubscriptionStatus();
                     }
                 });
+                checkSubscriptionStatus(); // Check immediately after initialization
             } else {
-                 console.warn("Push subscriptions are not supported or available on this browser.");
-                 const notifBtn = document.getElementById('notification-btn');
-                 if (notifBtn) notifBtn.style.display = 'none';
+                console.warn("Push subscriptions are not supported or available on this browser.");
+                document.getElementById('notification-btn').style.display = 'none';
             }
         }).catch((error) => {
             console.error("OneSignal SDK initialization failed:", error);
-            const notifBtn = document.getElementById('notification-btn');
-            if (notifBtn) notifBtn.style.display = 'none';
+            if (retries > 0) {
+                console.log(`Retrying OneSignal initialization... (${retries} attempts left)`);
+                setTimeout(() => initializeOneSignal(retries - 1, delay * 2), delay);
+            } else {
+                alert('Failed to initialize push notifications. Please try refreshing the page.');
+                document.getElementById('notification-btn').style.display = 'none';
+            }
         });
-    });
+    } else {
+        if (retries > 0) {
+            console.log(`OneSignal SDK not loaded. Retrying... (${retries} attempts left)`);
+            setTimeout(() => initializeOneSignal(retries - 1, delay * 2), delay);
+        } else {
+            console.error("OneSignal SDK failed to load after retries.");
+            alert('Push notifications are unavailable. Please ensure the OneSignal SDK is loaded.');
+            document.getElementById('notification-btn').style.display = 'none';
+        }
+    }
+}
+
+window.OneSignalDeferred = window.OneSignalDeferred || [];
+OneSignalDeferred.push(() => initializeOneSignal());
 
     // --- Login Authentication Guard ---
     const username = localStorage.getItem('username');
@@ -656,6 +675,7 @@
 
 </body>
 </html>
+
 
 
 
