@@ -114,7 +114,7 @@ app.use(
         "https://onesignal.com",
         "https://api.onesignal.com",
         "https://erspvsdfwaqjtuhymubj.supabase.co",
-        "https://cdn.onesignal.com",
+        "https://cdn.onesignal.com", // This line is critical
         "https://unpkg.com",
         "https://cdnjs.cloudflare.com",
       ],
@@ -669,6 +669,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
