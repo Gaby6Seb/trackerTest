@@ -121,57 +121,49 @@
 
 <script>
 // --- OneSignal Initialization ---
-function initializeOneSignal(retries = 3, delay = 2000) {
-    if (window.OneSignal) {
-        OneSignal.init({
-            appId: "95e17686-f5df-4181-a59a-f89457df2973",
-            allowLocalhostAsSecureOrigin: true,
-        }).then(() => {
-            console.log("OneSignal SDK Initialized successfully.");
-            if (OneSignal.User.pushSubscription) {
-                OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
-                    console.log('Push subscription state changed:', isSubscribed);
-                    if (isSubscribed) {
-                        const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
-                        if (oneSignalPlayerId) {
-                            socket.emit('register_one_signal', oneSignalPlayerId);
-                            console.log('Registered OneSignal player ID:', oneSignalPlayerId);
-                        }
+function initializeOneSignal() {
+    if (!window.OneSignal) {
+        console.error("OneSignal SDK not loaded.");
+        alert('Push notifications are unavailable. Please ensure the OneSignal SDK is loaded.');
+        document.getElementById('notification-btn').style.display = 'none';
+        return;
+    }
+
+    OneSignal.init({
+        appId: "95e17686-f5df-4181-a59a-f89457df2973",
+        allowLocalhostAsSecureOrigin: true,
+        serviceWorkerPath: '/OneSignalSDKWorker.js',
+        serviceWorkerParam: { scope: '/' },
+    }).then(() => {
+        console.log("OneSignal SDK Initialized successfully.");
+        if (OneSignal.User.pushSubscription) {
+            OneSignal.User.pushSubscription.addEventListener('change', (isSubscribed) => {
+                console.log('Push subscription state changed:', isSubscribed);
+                if (isSubscribed) {
+                    const oneSignalPlayerId = OneSignal.User.pushSubscription.id;
+                    if (oneSignalPlayerId) {
+                        socket.emit('register_one_signal', oneSignalPlayerId);
+                        console.log('Registered OneSignal player ID:', oneSignalPlayerId);
                     }
-                    if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
-                        checkSubscriptionStatus();
-                    }
-                });
-                checkSubscriptionStatus(); // Check immediately after initialization
-            } else {
-                console.warn("Push subscriptions are not supported or available on this browser.");
-                document.getElementById('notification-btn').style.display = 'none';
-            }
-        }).catch((error) => {
-            console.error("OneSignal SDK initialization failed:", error);
-            if (retries > 0) {
-                console.log(`Retrying OneSignal initialization... (${retries} attempts left)`);
-                setTimeout(() => initializeOneSignal(retries - 1, delay * 2), delay);
-            } else {
-                alert('Failed to initialize push notifications. Please try refreshing the page.');
-                document.getElementById('notification-btn').style.display = 'none';
-            }
-        });
-    } else {
-        if (retries > 0) {
-            console.log(`OneSignal SDK not loaded. Retrying... (${retries} attempts left)`);
-            setTimeout(() => initializeOneSignal(retries - 1, delay * 2), delay);
+                }
+                if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
+                    checkSubscriptionStatus();
+                }
+            });
+            OneSignal.Notifications.addEventListener('permissionChange', (permission) => {
+                console.log('Notification permission changed:', permission);
+                checkSubscriptionStatus();
+            });
+            checkSubscriptionStatus();
         } else {
-            console.error("OneSignal SDK failed to load after retries.");
-            alert('Push notifications are unavailable. Please ensure the OneSignal SDK is loaded.');
+            console.warn("Push subscriptions are not supported or available on this browser.");
             document.getElementById('notification-btn').style.display = 'none';
         }
-    }
-	// Inside initializeOneSignal, after OneSignal.init
-OneSignal.Notifications.addEventListener('permissionChange', (permission) => {
-    console.log('Notification permission changed:', permission);
-    checkSubscriptionStatus();
-});
+    }).catch((error) => {
+        console.error("OneSignal SDK initialization failed:", error);
+        alert('Failed to initialize push notifications. Please try refreshing the page.');
+        document.getElementById('notification-btn').style.display = 'none';
+    });
 }
 
 window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -504,34 +496,53 @@ socket.on('ghost_alert', (data) => {
     const subscribeContainer = document.querySelector('.onesignal-customlink-container');
     
     function handleSubscribeClick() {
-        OneSignalDeferred.push(function(OneSignal) {
-            // optIn() will show the native browser prompt to new users.
+    OneSignalDeferred.push(async function(OneSignal) {
+        const permission = await OneSignal.Notifications.permission;
+        if (permission === 'denied') {
+            alert('Notifications are blocked. Please enable them in your browser settings and try again.');
+            return;
+        }
+        if (permission === 'default') {
+            // Trigger the native permission prompt
             OneSignal.User.pushSubscription.optIn().then(() => {
-                 console.log('User successfully opted in.');
-                 // The 'change' event listener will handle the rest.
+                console.log('User successfully opted in.');
+                checkSubscriptionStatus();
             }).catch((error) => {
-                 alert('There was an issue subscribing. Please check browser permissions in the address bar.');
-                 console.error('Subscription error:', error);
+                console.error('Subscription error:', error);
+                alert('Failed to subscribe to notifications. Please check browser permissions.');
             });
-        });
-    }
+        } else {
+            // Already granted, ensure subscription
+            OneSignal.User.pushSubscription.optIn().then(() => {
+                console.log('User successfully opted in.');
+                checkSubscriptionStatus();
+            }).catch((error) => {
+                console.error('Subscription error:', error);
+                alert('Failed to subscribe to notifications. Please check browser permissions.');
+            });
+        }
+    });
+}
 
-    function handleUnsubscribeClick() {
-        OneSignalDeferred.push(function(OneSignal) {
-             OneSignal.User.pushSubscription.optOut().then(() => {
-                console.log('User successfully opted out.');
-             });
+function handleUnsubscribeClick() {
+    OneSignalDeferred.push(function(OneSignal) {
+        OneSignal.User.pushSubscription.optOut().then(() => {
+            console.log('User successfully opted out.');
+            checkSubscriptionStatus();
+        }).catch((error) => {
+            console.error('Unsubscription error:', error);
+            alert('Failed to unsubscribe from notifications.');
         });
-    }
+    });
+}
 
     // This function is now robust and handles all user states correctly.
 function checkSubscriptionStatus() {
     OneSignalDeferred.push(async function(OneSignal) {
         subscribeContainer.innerHTML = '';
         const button = document.createElement('button');
-
-        // Check notification permission status
         const permission = await OneSignal.Notifications.permission;
+
         if (permission === 'denied') {
             button.textContent = 'Enable Notifications (Blocked)';
             button.onclick = () => {
@@ -690,6 +701,7 @@ function checkSubscriptionStatus() {
 
 </body>
 </html>
+
 
 
 
