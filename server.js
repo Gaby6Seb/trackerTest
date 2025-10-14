@@ -110,7 +110,13 @@ app.use(
                 "https://unpkg.com",
                 "https://cdnjs.cloudflare.com",
             ],
-            workerSrc: ["'self'", "blob:", "https://cdn.onesignal.com", "https://*.onesignal.com"],
+            workerSrc: [
+                "'self'",
+                "blob:",
+                "https://cdn.onesignal.com",
+                "https://*.onesignal.com",
+                "https://trackertest-production-6d3f.up.railway.app", // Add your domain
+            ],
             styleSrc: [
                 "'self'",
                 "'unsafe-inline'",
@@ -724,6 +730,7 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
 
 
