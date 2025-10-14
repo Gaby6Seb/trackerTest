@@ -90,6 +90,29 @@ function loadTokensFromFile() {
 
 // --- Server Setup ---
 const app = express();
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "https://cdn.onesignal.com", // Allow OneSignal SDK
+        "https://unpkg.com",         // Allow Leaflet
+        "https://cdnjs.cloudflare.com", // Allow Socket.IO client
+      ],
+      workerSrc: ["'self'", "https://cdn.onesignal.com"], // Allow OneSignal Service Worker
+      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"], // Allow Leaflet CSS and inline styles
+      imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co"], // Allow map tiles and avatars
+      connectSrc: [
+        "'self'",
+        "https://trackertest-production-6d3f.up.railway.app", // Your production domain for Socket.IO
+        "wss://trackertest-production-6d3f.up.railway.app", // WebSocket connection
+        "https://onesignal.com"
+      ],
+      // Add other directives as needed
+    },
+  })
+);
 app.use(express.json());
 app.use((req, res, next) => {
     const proto = req.headers['x-forwarded-proto'];
@@ -638,3 +661,4 @@ async function startServer() {
 // Execute the startup function.
 startServer();
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
