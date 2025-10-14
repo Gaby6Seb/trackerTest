@@ -342,8 +342,15 @@ OneSignalDeferred.push(() => initializeOneSignal());
       if (initialMapLoad) initialMapLoad = false;
     });
     
-    socket.on('proximity_alert', (data) => console.log('Proximity Alert:', data));
-    socket.on('ghost_alert', (data) => console.log('Ghost Alert:', data));
+socket.on('proximity_alert', (data) => {
+    console.log('Proximity Alert:', JSON.stringify(data, null, 2));
+    alert(`Proximity Alert: ${data.player.name} (${data.player.teamName}) is ${data.distance} miles away!`);
+});
+
+socket.on('ghost_alert', (data) => {
+    console.log('Ghost Alert:', JSON.stringify(data, null, 2));
+    alert(`Ghost Alert: ${data.player.name} (${data.player.teamName}) went off the grid!`);
+});
     function panToLastLocation(lat, lng) { map.setView([lat, lng], 17); }
 
     function expandPanel(containerId) {
@@ -683,6 +690,7 @@ function checkSubscriptionStatus() {
 
 </body>
 </html>
+
 
 
 
