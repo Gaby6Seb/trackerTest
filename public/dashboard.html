@@ -231,8 +231,41 @@ function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayer
 
 async function handleSubscribeClick() { if (!window.OneSignal) return; try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { alert('Notifications are blocked. Please enable them in your browser settings and try again.'); return; } await OneSignal.User.PushSubscription.optIn(); console.log('User successfully opted in.'); await checkSubscriptionStatus(); } catch (error) { console.error('Subscription error:', error); } }
 async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
-async function checkSubscriptionStatus() { if (!window.OneSignal) return; const subscribeContainer = document.querySelector('.onesignal-customlink-container'); subscribeContainer.innerHTML = ''; const button = document.createElement('button'); try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { button.textContent = 'Enable Notifications (Blocked)'; button.onclick = () => alert('Notifications are blocked. Please enable them in your browser settings and try again.'); button.className = 'subscribe-btn disabled'; } else if (OneSignal.User && OneSignal.User.PushSubscription) { const isSubscribed = await OneSignal.User.PushSubscription.optedIn; button.textContent = isSubscribed ? 'Unsubscribe from Push Notifications' : 'Subscribe to Push Notifications'; button.onclick = isSubscribed ? handleUnsubscribeClick : handleSubscribeClick; button.className = isSubscribed ? 'unsubscribe-btn' : 'subscribe-btn'; } else { button.textContent = 'Push Notifications Not Supported'; button.disabled = true; button.className = 'subscribe-btn disabled'; } subscribeContainer.appendChild(button); } catch (error) { console.error('Error checking subscription status:', error); button.textContent = 'Notifications Unavailable'; button.disabled = true; button.className = 'subscribe-btn disabled'; subscribeContainer.appendChild(button); } }
+async function checkSubscriptionStatus() { 
+    if (!window.OneSignal) return; 
+    const subscribeContainer = document.querySelector('.onesignal-customlink-container'); 
+    subscribeContainer.innerHTML = ''; 
+    const button = document.createElement('button'); 
+    try { 
+        const permission = await OneSignal.Notifications.permission; 
+        if (permission === 'denied') { 
+            button.textContent = 'Enable Notifications (Blocked)'; 
+            button.onclick = () => alert('Notifications are blocked. Please enable them in your browser settings and try again.'); 
+            button.className = 'subscribe-btn disabled'; 
+        } else if (OneSignal.User && OneSignal.User.PushSubscription) { 
+            
+            // --- THIS IS THE FIX ---
+            // It should be .optedIn, not .getOptedIn()
+            const isSubscribed = OneSignal.User.PushSubscription.optedIn;
+            // --- END OF FIX ---
 
+            button.textContent = isSubscribed ? 'Unsubscribe from Push Notifications' : 'Subscribe to Push Notifications'; 
+            button.onclick = isSubscribed ? handleUnsubscribeClick : handleSubscribeClick; 
+            button.className = isSubscribed ? 'unsubscribe-btn' : 'subscribe-btn'; 
+        } else { 
+            button.textContent = 'Push Notifications Not Supported'; 
+            button.disabled = true; 
+            button.className = 'subscribe-btn disabled'; 
+        } 
+        subscribeContainer.appendChild(button); 
+    } catch (error) { 
+        console.error('Error checking subscription status:', error); 
+        button.textContent = 'Notifications Unavailable'; 
+        button.disabled = true; 
+        button.className = 'subscribe-btn disabled'; 
+        subscribeContainer.appendChild(button); 
+    } 
+}
 function setupNotificationModal(teammates) {
     const modalOverlay = document.getElementById('notification-modal-overlay');
     const openBtn = document.getElementById('notification-btn');
@@ -323,6 +356,7 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
 
 
 
