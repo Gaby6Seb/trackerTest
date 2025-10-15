@@ -369,7 +369,7 @@ function processNotifications(fullData) {
     const newPlayerStatusMap = new Map();
     const allPlayersWithLocation = new Map();
 
-    [...fullData.located, ...fullData.safeZone, ...full_data.stealthed].forEach(p => {
+    [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
         if (p.lat && p.lng) allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
         if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
         else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
@@ -680,6 +680,10 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('stop_live_location', () => {
+        delete socket.data.liveLocation;
+    });
+
     socket.on('disconnect', () => {
         console.log(`User ${socket.data.username || 'unauthenticated'} disconnected.`);
     });
@@ -695,3 +699,4 @@ async function startServer() {
 }
 
 startServer();
+
