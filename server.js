@@ -100,15 +100,50 @@ app.use(
     helmet.contentSecurityPolicy({
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.onesignal.com", "https://*.onesignal.com", "https://unpkg.com", "https://cdnjs.cloudflare.com"],
-            workerSrc: ["'self'", "blob:", "https://cdn.onesignal.com", "https://*.onesignal.com", "https://trackertest-production-6d3f.up.railway.app"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://*.onesignal.com"],
-            imgSrc: ["'self'", "data:", "https://*.tile.openstreetmap.org", "https://erspvsdfwaqjtuhymubj.supabase.co", "https://*.onesignal.com"],
-            frameSrc: ["'self'", "https://*.onesignal.com"],
-            connectSrc: ["'self'", "wss://trackertest-production-6d3f.up.railway.app", "https://*.onesignal.com", "https://erspvsdfwaqjtuhymubj.supabase.co"],
+            scriptSrc: [
+                "'self'",
+                "'unsafe-inline'", // unsafe-inline is needed for some libraries, but be aware of risks
+                "https://cdn.onesignal.com",
+                "https://*.onesignal.com",
+                "https://unpkg.com",
+                "https://cdnjs.cloudflare.com",
+            ],
+            workerSrc: [
+                "'self'",
+                "blob:",
+                "https://cdn.onesignal.com",
+                "https://*.onesignal.com",
+            ],
+            // --- KEY FIX IS HERE ---
+            styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "https://unpkg.com",
+                "https://onesignal.com",      // Explicitly allow the base domain for CSS
+                "https://*.onesignal.com",
+            ],
+            imgSrc: [
+                "'self'",
+                "data:",
+                "https://*.tile.openstreetmap.org",
+                "https://erspvsdfwaqjtuhymubj.supabase.co",
+                "https://*.onesignal.com",
+            ],
+            frameSrc: [
+                "'self'", 
+                "https://onesignal.com", // Allow framing for the popup
+                "https://*.onesignal.com"
+            ],
+            connectSrc: [
+                "'self'",
+                "wss://trackertest-production-6d3f.up.railway.app", // Your websocket
+                "https://*.onesignal.com",
+                "https://erspvsdfwaqjtuhymubj.supabase.co",
+            ],
         },
     })
 );
+
 app.use(express.json());
 app.use((req, res, next) => {
     const proto = req.headers['x-forwarded-proto'];
@@ -443,3 +478,4 @@ async function startServer() {
 }
 
 startServer();
+
