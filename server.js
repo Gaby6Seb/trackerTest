@@ -161,10 +161,22 @@ const PORT = process.env.PORT || 3000;
 
 // Serve OneSignal service worker files
 app.get('/OneSignalSDKWorker.js', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKWorker.js'));
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKWorker.js'), (err) => {
+        if (err) {
+            console.error('Error serving OneSignalSDKWorker.js:', err);
+            res.status(404).send('Service worker not found');
+        }
+    });
 });
 app.get('/OneSignalSDKUpdaterWorker.js', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKUpdaterWorker.js'));
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKUpdaterWorker.js'), (err) => {
+        if (err) {
+            console.error('Error serving OneSignalSDKUpdaterWorker.js:', err);
+            res.status(404).send('Service worker not found');
+        }
+    });
 });
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
