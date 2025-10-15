@@ -160,7 +160,9 @@ const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 
 // Serve OneSignal service worker files
+// Serve OneSignal service worker files
 app.get('/OneSignalSDKWorker.js', (req, res) => {
+    console.log('Serving OneSignalSDKWorker.js');
     res.setHeader('Content-Type', 'application/javascript');
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKWorker.js'), (err) => {
@@ -171,6 +173,7 @@ app.get('/OneSignalSDKWorker.js', (req, res) => {
     });
 });
 app.get('/OneSignalSDKUpdaterWorker.js', (req, res) => {
+    console.log('Serving OneSignalSDKUpdaterWorker.js');
     res.setHeader('Content-Type', 'application/javascript');
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKUpdaterWorker.js'), (err) => {
@@ -741,3 +744,4 @@ async function startServer() {
 }
 
 startServer();
+
