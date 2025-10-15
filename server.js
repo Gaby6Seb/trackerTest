@@ -162,6 +162,7 @@ const PORT = process.env.PORT || 3000;
 // Serve OneSignal service worker files
 app.get('/OneSignalSDKWorker.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKWorker.js'), (err) => {
         if (err) {
             console.error('Error serving OneSignalSDKWorker.js:', err);
@@ -171,6 +172,7 @@ app.get('/OneSignalSDKWorker.js', (req, res) => {
 });
 app.get('/OneSignalSDKUpdaterWorker.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKUpdaterWorker.js'), (err) => {
         if (err) {
             console.error('Error serving OneSignalSDKUpdaterWorker.js:', err);
