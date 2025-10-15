@@ -15,6 +15,15 @@ body {
     z-index: 1;
 }
 
+.marker-shield {
+    position: absolute;
+    top: -8px; /* Position it at the top of the avatar */
+    right: -8px;
+    font-size: 20px;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); /* Make the emoji stand out */
+    z-index: 10;
+}
+
 /* Header Styles */
 .header {
     background: linear-gradient(45deg, #007bff, #00bfff);
@@ -285,3 +294,4 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
     #filter-toggles { order: 4; }
     #search-container { order: 5; }
 }
+
