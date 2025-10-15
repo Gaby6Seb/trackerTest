@@ -384,13 +384,15 @@ function processNotifications(fullData) {
         const userExternalId = settings.myPlayerId;
         if (!userExternalId) return;
 
+        // Get the user's location, but DON'T exit if it's not found.
+        // It might not be needed for worldwide alerts.
         const myPlayerLocation = allPlayersWithLocation.get(userExternalId);
-        if (!myPlayerLocation) return;
 
         const previouslyInRange = socket.data.playersInRange || new Set();
         const currentlyInRange = new Set();
 
-        if (settings.proximityMiles > 0) {
+        // FIX: Only process proximity alerts if the user has a location and the setting is on.
+        if (myPlayerLocation && settings.proximityMiles > 0) {
             fullData.located.forEach(otherPlayer => {
                 if (otherPlayer.u === userExternalId) return;
                 const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
@@ -413,8 +415,10 @@ function processNotifications(fullData) {
                 const ghostLastLocation = playerLastKnownLocationMap.get(playerId);
                 if (!ghostPlayerInfo || !ghostLastLocation) return;
                 
-                let isInRange = settings.ghostMiles === -1; // Worldwide
-                if (!isInRange && settings.ghostMiles > 0) {
+                let isInRange = settings.ghostMiles === -1; // Worldwide is true by default.
+
+                // FIX: Only check distance if it's NOT a worldwide alert AND the user has a location.
+                if (!isInRange && settings.ghostMiles > 0 && myPlayerLocation) {
                     const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
                     if (distance <= settings.ghostMiles) isInRange = true;
                 }
@@ -689,6 +693,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
