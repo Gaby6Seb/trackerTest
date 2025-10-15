@@ -9,7 +9,6 @@ const OneSignal = require('@onesignal/node-onesignal');
 const helmet = require('helmet');
 
 // --- OneSignal Configuration ---
-// --- OneSignal Configuration ---
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
@@ -115,7 +114,7 @@ app.use(
                 "blob:",
                 "https://cdn.onesignal.com",
                 "https://*.onesignal.com",
-                "https://trackertest-production-6d3f.up.railway.app", // Add your domain
+                "https://trackertest-production-6d3f.up.railway.app",
             ],
             styleSrc: [
                 "'self'",
@@ -160,9 +159,12 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 
-// Serve OneSignal service worker file
+// Serve OneSignal service worker files
 app.get('/OneSignalSDKWorker.js', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKWorker.js'));
+});
+app.get('/OneSignalSDKUpdaterWorker.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'OneSignalSDKUpdaterWorker.js'));
 });
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
@@ -252,6 +254,8 @@ app.post('/logout', (req, res) => {
     }
     res.status(200).json({ message: 'Logged out successfully' });
 });
+
+// --- Test Notification Endpoint ---
 app.post('/test-notification', (req, res) => {
     const { socketId } = req.body;
     if (!socketId) {
@@ -267,6 +271,7 @@ app.post('/test-notification', (req, res) => {
         .then(() => res.json({ message: 'Test notification sent' }))
         .catch(err => res.status(500).json({ message: 'Failed to send test notification', error: err.message }));
 });
+
 // --- API Configuration ---
 const SUPABASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co";
 const SPLASHIN_API_URL = "https://splashin.app/api/v3";
@@ -283,8 +288,8 @@ const authData = {
 let isFetching = false;
 let lastSuccessfulData = null;
 let lastRichDataMap = new Map();
-let masterTeamId = null; // The team ID of the server's API account
-let masterTargetIds = new Set(); // The target IDs of the server's API account
+let masterTeamId = null;
+let masterTargetIds = new Set();
 const FETCH_INTERVAL_MS = 10000;
 const LOCATION_MEMORY_FILE = path.join(__dirname, 'last_locations.json');
 let playerLastKnownLocationMap = new Map();
@@ -500,7 +505,6 @@ function processNotifications(fullData) {
     previousPlayerStatusMap = new Map(newPlayerStatusMap.entries());
 }
 
-
 // --- The Core API Fetching Logic ---
 async function runApiRequests() {
     if (isFetching) { return; }
@@ -690,56 +694,36 @@ io.on('connection', (socket) => {
         socket.data.playersInRange = new Set();
     });
     
-socket.on('register_one_signal', (oneSignalPlayerId) => {
-    if (oneSignalPlayerId && typeof oneSignalPlayerId === 'string') {
-        socket.data.oneSignalPlayerId = oneSignalPlayerId;
-        console.log(`[${socket.data.username || socket.id}] registered for push notifications with ID: ${oneSignalPlayerId}`);
-        socket.emit('one_signal_registration_success', { playerId: oneSignalPlayerId });
-    } else {
-        console.warn(`[${socket.data.username || socket.id}] attempted to register invalid OneSignal player ID: ${oneSignalPlayerId}`);
-        socket.emit('one_signal_registration_error', { message: 'Invalid OneSignal player ID' });
-    }
-});
+    socket.on('register_one_signal', (oneSignalPlayerId) => {
+        if (oneSignalPlayerId && typeof oneSignalPlayerId === 'string') {
+            socket.data.oneSignalPlayerId = oneSignalPlayerId;
+            console.log(`[${socket.data.username || socket.id}] registered for push notifications with ID: ${oneSignalPlayerId}`);
+            socket.emit('one_signal_registration_success', { playerId: oneSignalPlayerId });
+        } else {
+            console.warn(`[${socket.data.username || socket.id}] attempted to register invalid OneSignal player ID: ${oneSignalPlayerId}`);
+            socket.emit('one_signal_registration_error', { message: 'Invalid OneSignal player ID' });
+        }
+    });
 
     socket.on('disconnect', () => {
         console.log(`User ${socket.data.username || 'unauthenticated'} disconnected. Total clients: ${io.engine.clientsCount}`);
     });
 });
 
-// ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ FIX START ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-// Wrap the server startup in an async function to fix the race condition.
+// --- Server Startup ---
 async function startServer() {
     console.log("Starting server...");
     loadMapFromFile();
     loadTokensFromFile();
 
     console.log("Performing initial API data fetch before accepting connections...");
-    // By awaiting the first run, we ensure lastRichDataMap is populated
-    // before any client can connect and authenticate.
     await runApiRequests(); 
 
-    // Now that we have data, we can start the recurring fetch interval.
     setInterval(runApiRequests, FETCH_INTERVAL_MS);
 
-    // And finally, start listening for connections.
     server.listen(PORT, () => {
         console.log(`Server is ready and listening on http://localhost:${PORT}`);
     });
 }
 
-// Execute the startup function.
 startServer();
-// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ FIX END ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-
-
-
-
-
-
-
-
-
-
-
-
