@@ -276,6 +276,7 @@ function setupNotificationModal(teammates) {
     const changePlayerLink = document.getElementById('change-player-link');
     const saveBtn = document.getElementById('save-settings-btn');
     const settingsTitle = settingsStep.querySelector('h2');
+    const testBtn = document.getElementById('test-notification-btn');
     
     teammateList.innerHTML = '';
     if (teammates && teammates.length > 0) {
@@ -335,6 +336,35 @@ function setupNotificationModal(teammates) {
         closeModal();
         alert('Alert preferences saved!');
     };
+  testBtn.onclick = async () => {
+        const myPlayerId = localStorage.getItem('myPlayerId');
+
+        if (!myPlayerId) {
+            alert('Please select your player profile and save settings before sending a test.');
+            return;
+        }
+
+        console.log(`Requesting test notification for external_id: ${myPlayerId}`);
+        try {
+            const res = await fetch('/test-notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Send the actual ID, not the temporary socket.id
+                body: JSON.stringify({ externalId: myPlayerId }) 
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                // Throw an error to be caught below, providing more detail
+                throw new Error(data.message || 'Unknown server error');
+            }
+            alert('✅ Test notification request sent successfully!');
+
+        } catch (e) {
+            console.error("Test notification error:", e);
+            alert(`⚠️ Error sending test notification: ${e.message}`);
+        }
+    };
 }
 // THIS IS THE BRACE THAT WAS CAUSING THE ERROR. IT HAS BEEN REMOVED.
 
@@ -356,6 +386,7 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
 
 
 
