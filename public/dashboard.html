@@ -217,6 +217,7 @@ const followMeToggle = document.getElementById('follow-me-toggle');
   
 let myLocationMarker = null;
 let locationAccuracyCircle = null;
+let proximityAlertCircle = null;
 let locationWatchId = null; // To store the ID of the location watcher
 let isFollowing = false; // New state variable
 
@@ -245,6 +246,8 @@ function onLocationFound(e) {
     if (isFollowing) {
         map.setView(latlng);
     }
+
+  updateProximityCircle();
 }
 
 // Function to handle errors (e.g., user denies permission)
@@ -252,6 +255,38 @@ function onLocationError(e) {
     alert(e.message);
     // Stop tracking if an error occurs
     stopLocationTracking();
+}
+
+function updateProximityCircle() {
+    const proximityMiles = parseFloat(document.getElementById('proximity-radius').value);
+    const isTracking = locationWatchId !== null;
+
+    // We only show the circle if tracking is active and a radius is set
+    if (isTracking && proximityMiles > 0 && myLocationMarker) {
+        const centerLatLng = myLocationMarker.getLatLng();
+        const radiusMeters = proximityMiles * 1609.34; // Convert miles to meters
+
+        if (!proximityAlertCircle) {
+            // If the circle doesn't exist, create it
+            proximityAlertCircle = L.circle(centerLatLng, {
+                radius: radiusMeters,
+                color: '#3498db',      // A nice blue color
+                fillColor: '#3498db',
+                fillOpacity: 0.15,
+                weight: 2             // Border weight
+            }).addTo(map);
+        } else {
+            // Otherwise, just update its position and radius
+            proximityAlertCircle.setLatLng(centerLatLng);
+            proximityAlertCircle.setRadius(radiusMeters);
+        }
+    } else {
+        // If conditions aren't met (tracking off or radius is 0), remove the circle
+        if (proximityAlertCircle) {
+            map.removeLayer(proximityAlertCircle);
+            proximityAlertCircle = null;
+        }
+    }
 }
 
 // Function to start tracking
@@ -316,6 +351,11 @@ function stopLocationTracking() {
     if (locationAccuracyCircle) {
         map.removeLayer(locationAccuracyCircle);
         locationAccuracyCircle = null;
+    }
+
+  if (proximityAlertCircle) {
+        map.removeLayer(proximityAlertCircle);
+        proximityAlertCircle = null;
     }
 
     findMeBtn.textContent = '📍 Find Me';
@@ -448,7 +488,9 @@ function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayer
 async function handleSubscribeClick() { if (!window.OneSignal) return; try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { alert('Notifications are blocked. Please enable them in your browser settings and try again.'); return; } await OneSignal.User.PushSubscription.optIn(); console.log('User successfully opted in.'); await checkSubscriptionStatus(); } catch (error) { console.error('Subscription error:', error); } }
 async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
 async function checkSubscriptionStatus() { if (!window.OneSignal) return; const subscribeContainer = document.querySelector('.onesignal-customlink-container'); subscribeContainer.innerHTML = ''; const button = document.createElement('button'); try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { button.textContent = 'Enable Notifications (Blocked)'; button.onclick = () => alert('Notifications are blocked. Please enable them in your browser settings and try again.'); button.className = 'subscribe-btn disabled'; } else if (OneSignal.User && OneSignal.User.PushSubscription) { const isSubscribed = OneSignal.User.PushSubscription.optedIn; button.textContent = isSubscribed ? 'Unsubscribe from Push Notifications' : 'Subscribe to Push Notifications'; button.onclick = isSubscribed ? handleUnsubscribeClick : handleSubscribeClick; button.className = isSubscribed ? 'unsubscribe-btn' : 'subscribe-btn'; } else { button.textContent = 'Push Notifications Not Supported'; button.disabled = true; button.className = 'subscribe-btn disabled'; } subscribeContainer.appendChild(button); } catch (error) { console.error('Error checking subscription status:', error); button.textContent = 'Notifications Unavailable'; button.disabled = true; button.className = 'subscribe-btn disabled'; subscribeContainer.appendChild(button); } }
-function setupNotificationModal(teammates) { const modalOverlay = document.getElementById('notification-modal-overlay'); const openBtn = document.getElementById('notification-btn'); const closeBtn = document.getElementById('modal-close-btn'); const playerSelectionStep = document.getElementById('player-selection-step'); const settingsStep = document.getElementById('notification-settings-step'); const teammateList = document.getElementById('teammate-list'); const changePlayerLink = document.getElementById('change-player-link'); const saveBtn = document.getElementById('save-settings-btn'); const settingsTitle = settingsStep.querySelector('h2'); const testBtn = document.getElementById('test-notification-btn'); teammateList.innerHTML = ''; if (teammates && teammates.length > 0) { teammates.forEach(player => { const li = document.createElement('li'); li.textContent = player.name; li.dataset.id = player.id; li.onclick = () => { localStorage.setItem('myPlayerId', player.id); localStorage.setItem('myPlayerName', player.name); showUserSettings(player.name); }; teammateList.appendChild(li); }); } else { playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.'; } const showUserSettings = (playerName) => { playerSelectionStep.style.display = 'none'; settingsStep.style.display = 'block'; settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`; loadSettings(); checkSubscriptionStatus(); }; openBtn.onclick = () => { modalOverlay.style.display = 'flex'; const myPlayerId = localStorage.getItem('myPlayerId'); const myPlayerName = localStorage.getItem('myPlayerName'); if (myPlayerId && myPlayerName) { showUserSettings(myPlayerName); } else { playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; checkSubscriptionStatus(); } }; changePlayerLink.onclick = async (e) => { e.preventDefault(); if (window.OneSignal) { await window.OneSignal.logout(); console.log('Logged out of OneSignal identity.'); } localStorage.removeItem('myPlayerId'); localStorage.removeItem('myPlayerName'); playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; }; const closeModal = () => modalOverlay.style.display = 'none'; closeBtn.onclick = closeModal; modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); }; const enableNotifications = document.getElementById('enable-notifications'); const fieldset = document.getElementById('notification-fieldset'); const proximitySlider = document.getElementById('proximity-radius'); const proximityValue = document.getElementById('proximity-value'); const ghostSlider = document.getElementById('ghost-radius'); const ghostValue = document.getElementById('ghost-value'); const ghostWorldwide = document.getElementById('ghost-worldwide'); enableNotifications.onchange = () => { fieldset.disabled = !enableNotifications.checked; }; proximitySlider.oninput = () => { proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off'; }; ghostSlider.oninput = () => { ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'; }; ghostWorldwide.onchange = () => { ghostSlider.disabled = ghostWorldwide.checked; ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'); }; function loadSettings() { const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {}; enableNotifications.checked = settings.hasOwnProperty('enabled') ? settings.enabled : true; proximitySlider.value = settings.proximityMiles || 0; ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0; ghostWorldwide.checked = settings.ghostMiles === -1; proximitySlider.dispatchEvent(new Event('input')); ghostSlider.dispatchEvent(new Event('input')); ghostWorldwide.dispatchEvent(new Event('change')); enableNotifications.dispatchEvent(new Event('change')); } saveBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (parseFloat(proximitySlider.value) > 0 && !myPlayerId) { alert("Please select your player profile to enable proximity alerts."); return; } const settings = { myPlayerId: myPlayerId, enabled: enableNotifications.checked, proximityMiles: parseFloat(proximitySlider.value), ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value) }; localStorage.setItem('notificationSettings', JSON.stringify(settings)); socket.emit('update_notification_settings', settings); try { if (settings.myPlayerId) { console.log(`Logging into OneSignal with external_id: ${settings.myPlayerId}`); await window.OneSignal.login(settings.myPlayerId); console.log(`Successfully identified user to OneSignal.`); } else { await window.OneSignal.logout(); } } catch (error) { console.error('OneSignal login/logout error:', error); alert('Could not update your notification identity. Please try again.'); } closeModal(); alert('Alert preferences saved!'); }; testBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (!myPlayerId) { alert('Please select your player profile and save settings before sending a test.'); return; } console.log(`Requesting test notification for external_id: ${myPlayerId}`); try { const res = await fetch('/test-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalId: myPlayerId }) }); const data = await res.json(); if (!res.ok) { throw new Error(data.message || 'Unknown server error'); } alert('✅ Test notification request sent successfully!'); } catch (e) { console.error("Test notification error:", e); alert(`⚠️ Error sending test notification: ${e.message}`); } }; }
+function setupNotificationModal(teammates) { const modalOverlay = document.getElementById('notification-modal-overlay'); const openBtn = document.getElementById('notification-btn'); const closeBtn = document.getElementById('modal-close-btn'); const playerSelectionStep = document.getElementById('player-selection-step'); const settingsStep = document.getElementById('notification-settings-step'); const teammateList = document.getElementById('teammate-list'); const changePlayerLink = document.getElementById('change-player-link'); const saveBtn = document.getElementById('save-settings-btn'); const settingsTitle = settingsStep.querySelector('h2'); const testBtn = document.getElementById('test-notification-btn'); teammateList.innerHTML = ''; if (teammates && teammates.length > 0) { teammates.forEach(player => { const li = document.createElement('li'); li.textContent = player.name; li.dataset.id = player.id; li.onclick = () => { localStorage.setItem('myPlayerId', player.id); localStorage.setItem('myPlayerName', player.name); showUserSettings(player.name); }; teammateList.appendChild(li); }); } else { playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.'; } const showUserSettings = (playerName) => { playerSelectionStep.style.display = 'none'; settingsStep.style.display = 'block'; settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`; loadSettings(); checkSubscriptionStatus(); }; openBtn.onclick = () => { modalOverlay.style.display = 'flex'; const myPlayerId = localStorage.getItem('myPlayerId'); const myPlayerName = localStorage.getItem('myPlayerName'); if (myPlayerId && myPlayerName) { showUserSettings(myPlayerName); } else { playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; checkSubscriptionStatus(); } }; changePlayerLink.onclick = async (e) => { e.preventDefault(); if (window.OneSignal) { await window.OneSignal.logout(); console.log('Logged out of OneSignal identity.'); } localStorage.removeItem('myPlayerId'); localStorage.removeItem('myPlayerName'); playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; }; const closeModal = () => modalOverlay.style.display = 'none'; closeBtn.onclick = closeModal; modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); }; const enableNotifications = document.getElementById('enable-notifications'); const fieldset = document.getElementById('notification-fieldset');
+                                            const proximitySlider = document.getElementById('proximity-radius'); 
+                                            const proximityValue = document.getElementById('proximity-value'); const ghostSlider = document.getElementById('ghost-radius'); const ghostValue = document.getElementById('ghost-value'); const ghostWorldwide = document.getElementById('ghost-worldwide'); enableNotifications.onchange = () => { fieldset.disabled = !enableNotifications.checked; }; proximitySlider.oninput = () => { proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off'; updateProximityCircle(); }; ghostSlider.oninput = () => { ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'; }; ghostWorldwide.onchange = () => { ghostSlider.disabled = ghostWorldwide.checked; ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'); }; function loadSettings() { const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {}; enableNotifications.checked = settings.hasOwnProperty('enabled') ? settings.enabled : true; proximitySlider.value = settings.proximityMiles || 0; ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0; ghostWorldwide.checked = settings.ghostMiles === -1; proximitySlider.dispatchEvent(new Event('input')); ghostSlider.dispatchEvent(new Event('input')); ghostWorldwide.dispatchEvent(new Event('change')); enableNotifications.dispatchEvent(new Event('change')); } saveBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (parseFloat(proximitySlider.value) > 0 && !myPlayerId) { alert("Please select your player profile to enable proximity alerts."); return; } const settings = { myPlayerId: myPlayerId, enabled: enableNotifications.checked, proximityMiles: parseFloat(proximitySlider.value), ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value) }; localStorage.setItem('notificationSettings', JSON.stringify(settings)); socket.emit('update_notification_settings', settings); try { if (settings.myPlayerId) { console.log(`Logging into OneSignal with external_id: ${settings.myPlayerId}`); await window.OneSignal.login(settings.myPlayerId); console.log(`Successfully identified user to OneSignal.`); } else { await window.OneSignal.logout(); } } catch (error) { console.error('OneSignal login/logout error:', error); alert('Could not update your notification identity. Please try again.'); } closeModal(); alert('Alert preferences saved!'); }; testBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (!myPlayerId) { alert('Please select your player profile and save settings before sending a test.'); return; } console.log(`Requesting test notification for external_id: ${myPlayerId}`); try { const res = await fetch('/test-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalId: myPlayerId }) }); const data = await res.json(); if (!res.ok) { throw new Error(data.message || 'Unknown server error'); } alert('✅ Test notification request sent successfully!'); } catch (e) { console.error("Test notification error:", e); alert(`⚠️ Error sending test notification: ${e.message}`); } }; }
 socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
 const setupCollapsiblePanel = (headerId, containerId, iconId) => { const header = document.getElementById(headerId); const container = document.getElementById(containerId); const icon = document.getElementById(iconId); header.addEventListener('click', () => { container.classList.toggle('minimized'); icon.textContent = container.classList.contains('minimized') ? '+' : '-'; }); };
 setupCollapsiblePanel('safezone-header', 'safezone-container', 'safezone-toggle-icon');
@@ -457,5 +499,6 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
 
 
