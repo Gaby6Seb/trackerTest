@@ -296,26 +296,17 @@ app.post('/test-notification', (req, res) => {
     }
 
     const socket = io.sockets.sockets.get(socketId);
-    if (!socket || !socket.data.oneSignalPlayerId) {
-        return res.status(400).json({ message: 'Invalid socket ID or no OneSignal player ID registered' });
+    // --- MODIFIED: Check for the external_id (`myPlayerId`) in the settings ---
+    const userExternalId = socket?.data?.notificationSettings?.myPlayerId;
+
+    if (!socket || !userExternalId) {
+        return res.status(400).json({ message: 'Invalid socket ID or no user profile selected for notifications' });
     }
 
-    sendPushNotification([socket.data.oneSignalPlayerId], 'Test Notification', 'This is a test notification from the server.')
+    sendPushNotification([userExternalId], 'Test Notification', 'This is a test notification from the server.')
         .then(() => res.json({ message: 'Test notification sent' }))
         .catch(err => res.status(500).json({ message: 'Failed to send test notification', error: err.message }));
 });
-
-// --- API Configuration ---
-const SUPABASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co";
-const SPLASHIN_API_URL = "https://splashin.app/api/v3";
-const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyc3B2c2Rmd2FxanR1aHltdWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODM1ODY0MjcsImV4cCI6MTk5OTE2MjQyN30.2AItrHcB7A5bSZ_dfd455kvLL8fXLL7IrfMBoFmkGww";
-const GAME_ID = "c8862e51-4f00-42e7-91ed-55a078d57efc";
-const AVATAR_BASE_URL = "https://erspvsdfwaqjtuhymubj.supabase.co/storage/v1/object/public/avatars/";
-const authData = {
-    email: process.env.API_EMAIL,
-    password: process.env.API_PASSWORD,
-    goture_meta_security: {},
-};
 
 // --- State Management ---
 let isFetching = false;
@@ -430,37 +421,6 @@ async function resolveReferenceLogin(loginDetails) {
 }
 
 // --- Notification Processing Logic ---
-async function sendPushNotification(playerIds, heading, content, retries = 3, delay = 2000) {
-    if (!oneSignalClient || playerIds.length === 0 || !playerIds.every(id => typeof id === 'string' && id)) {
-        console.warn("Cannot send push notification: Invalid client or player IDs", { playerIds });
-        return;
-    }
-
-    const notification = {
-        app_id: ONESIGNAL_APP_ID,
-        include_player_ids: playerIds,
-        headings: { en: heading },
-        contents: { en: content },
-    };
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            console.log(`Sending push notification to ${playerIds.length} player(s), attempt ${attempt}...`);
-            const response = await oneSignalClient.createNotification(notification);
-            console.log(`Push notification sent successfully: ${JSON.stringify(response)}`);
-            return;
-        } catch (e) {
-            console.error(`Error sending OneSignal push notification (attempt ${attempt}):`, e.body || e.message);
-            if (attempt < retries) {
-                console.log(`Retrying in ${delay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                console.error("Failed to send push notification after all retries:", e.body || e.message);
-            }
-        }
-    }
-}
-
 function processNotifications(fullData) {
     const newPlayerStatusMap = new Map();
     const allPlayersWithLocation = new Map();
@@ -476,35 +436,35 @@ function processNotifications(fullData) {
     io.sockets.sockets.forEach(socket => {
         const settings = socket.data.notificationSettings;
         if (!settings || !settings.enabled) return;
+        
+        // --- MODIFIED: Use myPlayerId as the external_id for sending notifications ---
+        const userExternalId = settings.myPlayerId; 
+        if (!userExternalId) return; // Can't send notifications if we don't know who they are
 
-        if (settings.myPlayerId) {
-            const myPlayerLocation = allPlayersWithLocation.get(settings.myPlayerId);
-            if (!myPlayerLocation) return;
+        const myPlayerLocation = allPlayersWithLocation.get(userExternalId);
+        if (!myPlayerLocation) return;
 
-            const previouslyInRange = socket.data.playersInRange || new Set();
-            const currentlyInRange = new Set();
+        const previouslyInRange = socket.data.playersInRange || new Set();
+        const currentlyInRange = new Set();
 
-            if (settings.proximityMiles > 0) {
-                for (const otherPlayer of fullData.located) {
-                    if (otherPlayer.u === settings.myPlayerId) continue;
-                    const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
-                    if (distance <= settings.proximityMiles) {
-                        currentlyInRange.add(otherPlayer.u);
-                        if (!previouslyInRange.has(otherPlayer.u)) {
-                            socket.emit('proximity_alert', { player: { name: `${otherPlayer.firstName} ${otherPlayer.lastName}`, teamName: otherPlayer.teamName }, distance: distance.toFixed(2) });
-                            const oneSignalPlayerId = socket.data.oneSignalPlayerId;
-                            if (oneSignalPlayerId) {
-                                sendPushNotification([oneSignalPlayerId], 'Proximity Alert!', `${otherPlayer.firstName} ${otherPlayer.lastName} (${otherPlayer.teamName}) is now within ${distance.toFixed(2)} miles of you.`);
-                            }
-                        }
+        if (settings.proximityMiles > 0) {
+            for (const otherPlayer of fullData.located) {
+                if (otherPlayer.u === userExternalId) continue;
+                const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
+                if (distance <= settings.proximityMiles) {
+                    currentlyInRange.add(otherPlayer.u);
+                    if (!previouslyInRange.has(otherPlayer.u)) {
+                        socket.emit('proximity_alert', { player: { name: `${otherPlayer.firstName} ${otherPlayer.lastName}`, teamName: otherPlayer.teamName }, distance: distance.toFixed(2) });
+                        // --- MODIFIED: Send the notification to the user's external_id ---
+                        sendPushNotification([userExternalId], 'Proximity Alert!', `${otherPlayer.firstName} ${otherPlayer.lastName} (${otherPlayer.teamName}) is now within ${distance.toFixed(2)} miles of you.`);
                     }
                 }
             }
-            socket.data.playersInRange = currentlyInRange;
         }
+        socket.data.playersInRange = currentlyInRange;
 
         newPlayerStatusMap.forEach((currentStatus, playerId) => {
-            if (settings.myPlayerId && playerId === settings.myPlayerId) return;
+            if (playerId === userExternalId) return;
 
             const previousStatus = previousPlayerStatusMap.get(playerId) || 'unknown';
             const justWentGhost = (previousStatus === 'located') && (currentStatus === 'stealthed' || currentStatus === 'notLocated');
@@ -518,7 +478,6 @@ function processNotifications(fullData) {
                 if (settings.ghostMiles === -1) {
                     isInRange = true;
                 } else if (settings.ghostMiles > 0) {
-                    const myPlayerLocation = allPlayersWithLocation.get(settings.myPlayerId);
                     if (myPlayerLocation) {
                         const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
                         if (distance <= settings.ghostMiles) isInRange = true;
@@ -527,10 +486,8 @@ function processNotifications(fullData) {
 
                 if (isInRange) {
                     socket.emit('ghost_alert', { player: { name: `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name}`, teamName: ghostPlayerInfo.team_name } });
-                    const oneSignalPlayerId = socket.data.oneSignalPlayerId;
-                    if (oneSignalPlayerId) {
-                        sendPushNotification([oneSignalPlayerId], 'Ghost Alert!', `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name} (${ghostPlayerInfo.team_name}) just went off the grid.`);
-                    }
+                    // --- MODIFIED: Send the notification to the user's external_id ---
+                    sendPushNotification([userExternalId], 'Ghost Alert!', `${ghostPlayerInfo.first_name} ${ghostPlayerInfo.last_name} (${ghostPlayerInfo.team_name}) just went off the grid.`);
                 }
             }
         });
@@ -725,6 +682,8 @@ io.on('connection', (socket) => {
         console.log(`[${socket.data.username}] updated notification settings:`, settings);
         socket.data.notificationSettings = settings;
         socket.data.playersInRange = new Set();
+        // The client-side code will now handle associating the device with the external_id.
+        // No server-side OneSignal call is needed here anymore.
     });
     
     socket.on('register_one_signal', (oneSignalPlayerId) => {
@@ -760,5 +719,6 @@ async function startServer() {
 }
 
 startServer();
+
 
 
