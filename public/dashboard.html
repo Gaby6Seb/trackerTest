@@ -126,9 +126,6 @@ function initializeOneSignal() {
         return;
     }
 
-    window.OneSignal.SERVICE_WORKER_PATH = '/OneSignalSDKWorker.js';
-    window.OneSignal.SERVICE_WORKER_UPDATER_PATH = '/OneSignalSDKUpdaterWorker.js';
-
     OneSignal.init({
         appId: "95e17686-f5df-4181-a59a-f89457df2973",
         allowLocalhostAsSecureOrigin: true,
