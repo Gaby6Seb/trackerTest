@@ -137,7 +137,7 @@ async function initializeOneSignal() {
         console.log("OneSignal SDK initialized successfully.");
 
         // Check if push is supported by the browser environment
-        if (!OneSignal.User.isPushSupported()) {
+        if (!OneSignal.Notifications.isPushSupported()) {
             console.warn("Push notifications are not supported by this browser.");
             document.getElementById('notification-btn').style.display = 'none';
             return;
@@ -323,4 +323,5 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
 
