@@ -159,6 +159,12 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 
+// Temporary redirect for OneSignal SDK script to handle incorrect URLs
+app.get('/OneSignalSDK.sw.js*', (req, res) => {
+    console.log(`Redirecting request for ${req.originalUrl} to CDN`);
+    res.redirect('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
+});
+
 // Serve OneSignal service worker files
 app.get('/OneSignalSDKWorker.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript');
