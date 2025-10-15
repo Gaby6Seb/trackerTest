@@ -279,20 +279,95 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
 
 /* Mobile Layout Adjustments */
 @media (max-width: 767px) {
-    .header { flex-direction: column; padding-bottom: 15px; }
-    .header-content { text-align: center; margin-bottom: 10px; }
+    .header { 
+        flex-direction: column; 
+        padding: 10px 15px; /* Reduced padding */
+    }
+    .header-content { text-align: center; margin-bottom: 8px; }
+    .header h1 { font-size: 1.5em; } /* Smaller title */
+
+    /* Main panel styling */
     #controls-container {
         position: fixed;
-        top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-width: none;
-        border-radius: 15px 15px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
-        padding: 10px 15px 15px; max-height: 45vh; box-sizing: border-box;
+        top: auto; bottom: 0; left: 0; right: 0; 
+        width: 100%; max-width: none;
+        border-radius: 15px 15px 0 0; 
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+        padding: 0 15px 15px; /* Remove top padding */
+        max-height: 45vh; /* Default expanded height */
+        box-sizing: border-box;
+        gap: 0; /* Remove gap from main container */
+        transition: max-height 0.3s ease-in-out; /* Smooth collapse animation */
     }
-    #not-located-list, #safezone-list, #stealth-list { max-height: 25vh; }
-    #safezone-container { order: 1; }
-    #stealth-container { order: 2; }
-    #not-located-container { order: 3; }
-    #filter-toggles { order: 4; }
-    #search-container { order: 5; }
+
+    /* Collapsed State: Panel is just tall enough for the header bar */
+    #controls-container.panel-collapsed {
+        max-height: 60px; 
+    }
+
+    /* The new header bar for primary controls */
+    #mobile-panel-header {
+        display: flex;
+        align-items: center;
+        padding: 12px 0;
+        gap: 10px;
+    }
+
+    /* The "grabber" handle */
+    #panel-grabber {
+        flex-shrink: 0;
+        width: 40px;
+        height: 6px;
+        background-color: #ccc;
+        border-radius: 3px;
+        cursor: pointer;
+    }
+
+    /* Search takes up most of the space */
+    #search-container {
+        flex-grow: 1;
+        border: none;
+        padding: 0;
+    }
+    #player-search {
+        padding: 8px 30px 8px 10px; /* Adjust padding for smaller height */
+    }
+    #clear-search-btn {
+        font-size: 1.6em;
+    }
+    
+    /* Find Me button is compact */
+    #location-control {
+        flex-shrink: 0;
+        padding: 0;
+        display: flex; /* Make button and label align nicely */
+        align-items: center;
+        gap: 5px;
+    }
+    #find-me-btn {
+        padding: 6px 10px; /* Smaller button */
+    }
+    #follow-me-label {
+        margin-left: 0; /* Remove old margin */
+    }
+
+    /* Area for the accordion lists */
+    #collapsible-controls-area {
+        overflow-y: auto;
+    }
+    
+    #filter-toggles { padding-top: 10px; }
+
+    #not-located-list, #safezone-list, #stealth-list { 
+        max-height: 25vh; 
+    }
+
+    /* Desktop styles that we need to hide on mobile */
+    #controls-container > #search-container,
+    #controls-container > #location-control,
+    #controls-container > #filter-toggles {
+        display: none;
+    }
 }
 
 /* style.css */
@@ -351,3 +426,4 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
         opacity: 0;
     }
 }
+
