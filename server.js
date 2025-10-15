@@ -183,6 +183,22 @@ app.get('/OneSignalSDKUpdaterWorker.js', (req, res) => {
         }
     });
 });
+// Proxy OneSignalSDK.sw.js to bypass CDN fetch issues in service worker
+app.get('/OneSignalSDK.sw.js', async (req, res) => {
+    console.log('Proxying OneSignalSDK.sw.js from CDN');
+    try {
+        const response = await axios.get('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js', { 
+            responseType: 'text',
+            timeout: 10000 
+        });
+        res.setHeader('Content-Type', 'application/javascript');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.send(response.data);
+    } catch (err) {
+        console.error('Failed to proxy OneSignalSDK.sw.js:', err.message);
+        res.status(500).send('// Failed to load OneSignal SDK');
+    }
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 
@@ -744,4 +760,5 @@ async function startServer() {
 }
 
 startServer();
+
 
