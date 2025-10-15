@@ -119,49 +119,47 @@
 
 <script>
 // --- OneSignal Initialization ---
-function initializeOneSignal() {
+async function initializeOneSignal() {
     if (!window.OneSignal) {
         console.error("OneSignal SDK not loaded.");
         document.getElementById('notification-btn').style.display = 'none';
         return;
     }
 
-    OneSignal.init({
-        appId: "95e17686-f5df-4181-a59a-f89457df2973",
-        allowLocalhostAsSecureOrigin: true,
-        serviceWorkerPath: '/OneSignalSDKWorker.js',
-        serviceWorkerUpdaterPath: '/OneSignalSDKUpdaterWorker.js',
-        serviceWorkerParam: { scope: '/' }
-    }).then(async () => {
+    try {
+        // --- CORRECTED INIT CONFIG ---
+        await OneSignal.init({
+            appId: "95e17686-f5df-4181-a59a-f89457df2973",
+            allowLocalhostAsSecureOrigin: true,
+            serviceWorkerPath: '/OneSignalSDKWorker.js', // This is the crucial file
+            // serviceWorkerUpdaterPath has been removed as you noted.
+        });
         console.log("OneSignal SDK initialized successfully.");
-        try {
-            if (!navigator.serviceWorker || !('PushManager' in window)) {
-                console.warn("Push notifications are not supported in this browser.");
-                document.getElementById('notification-btn').style.display = 'none';
-                return;
-            }
 
-            if (OneSignal.User && OneSignal.User.pushSubscription) {
-                const updateSubscriptionUI = () => {
-                    if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
-                        checkSubscriptionStatus();
-                    }
-                };
-                OneSignal.User.pushSubscription.addEventListener('change', updateSubscriptionUI);
-                OneSignal.Notifications.addEventListener('permissionChange', updateSubscriptionUI);
-                await checkSubscriptionStatus();
-            } else {
-                console.warn("Push subscriptions are not available in this context.");
-                document.getElementById('notification-btn').style.display = 'none';
-            }
-        } catch (error) {
-            console.error("Error during OneSignal setup:", error);
+        // Check if push is supported by the browser environment
+        if (!OneSignal.User.isPushSupported()) {
+            console.warn("Push notifications are not supported by this browser.");
             document.getElementById('notification-btn').style.display = 'none';
+            return;
         }
-    }).catch((error) => {
+        
+        console.log("Push notifications are supported.");
+        document.getElementById('notification-btn').style.display = 'block'; // Show the bell icon
+        
+        const updateSubscriptionUI = () => {
+            if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
+                checkSubscriptionStatus();
+            }
+        };
+
+        OneSignal.User.pushSubscription.addEventListener('change', updateSubscriptionUI);
+        OneSignal.Notifications.addEventListener('permissionChange', updateSubscriptionUI);
+        await checkSubscriptionStatus();
+
+    } catch (error) {
         console.error("OneSignal SDK initialization failed:", error);
         document.getElementById('notification-btn').style.display = 'none';
-    });
+    }
 }
 
 window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -325,3 +323,4 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
