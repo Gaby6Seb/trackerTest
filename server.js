@@ -241,59 +241,54 @@ app.post('/logout', (req, res) => {
 
 // --- FIXED: Notification Sending Function ---
 async function sendPushNotification(externalUserIds, heading, content) {
-    if (!oneSignalClient || !externalUserIds || !externalUserIds.length) {
-        const errorMsg = "Push notifications are not configured or target user ID was missing.";
-        console.warn("Skipping push notification:", errorMsg, { externalUserIds });
+    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+        const errorMsg = "OneSignal environment variables are not set.";
+        console.error(errorMsg);
         throw new Error(errorMsg);
     }
 
-    // --- Using the correct, official SDK method as you discovered ---
-    const notification = new OneSignal.Notification();
-    notification.app_id = ONESIGNAL_APP_ID;
-    notification.include_aliases = {
-        external_id: externalUserIds
-    };
-    notification.target_channel = 'push';
-    notification.contents = {
-        en: content
-    };
-    notification.headings = {
-        en: heading
-    };
-    // --- End of correct method ---
+    if (!externalUserIds || externalUserIds.length === 0) {
+        const errorMsg = "Cannot send notification to empty user list.";
+        console.warn(errorMsg);
+        throw new Error(errorMsg);
+    }
 
     try {
-        console.log(`Attempting to send notification to external_id(s): [${externalUserIds.join(', ')}]`);
-        const response = await oneSignalClient.createNotification(notification);
+        console.log(`Sending notification via Axios to external_id(s): [${externalUserIds.join(', ')}]`);
 
-        if (response.errors && response.errors.length > 0) {
-            const errorMessage = `OneSignal API returned errors: ${JSON.stringify(response.errors)}`;
-            console.error(errorMessage);
-            throw new Error(errorMessage);
-        }
-        if (response.recipients === 0) {
-            console.warn("OneSignal Warning: Notification sent, but the target user has no subscribed devices. Did they click 'Allow'?");
-        }
-
-        console.log(`Push notification sent successfully. ID: ${response.id}, Recipients: ${response.recipients}`);
-        return response;
-
-    } catch (e) {
-        let fullErrorDetails = "An unknown error occurred with the OneSignal SDK.";
-        if (e && typeof e.text === 'function') {
-            try {
-                fullErrorDetails = await e.text();
-            } catch (parseError) {
-                fullErrorDetails = "Could not parse the error response from OneSignal.";
+        const response = await axios.post(
+            "https://onesignal.com/api/v1/notifications",
+            {
+                app_id: ONESIGNAL_APP_ID,
+                include_aliases: { external_id: externalUserIds },
+                target_channel: "push",
+                headings: { en: heading },
+                contents: { en: content },
+            },
+            {
+                headers: {
+                    "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
             }
-        } else if (e.message) {
-            fullErrorDetails = e.message;
-        }
+        );
+        
+        console.log(`Push notification sent successfully. ID: ${response.data.id}, Recipients: ${response.data.recipients}`);
+        return response.data;
 
-        console.error("--- OneSignal Push Notification FAILED ---");
-        console.error("Full Error Details:", fullErrorDetails);
-        console.error("-----------------------------------------");
-        throw new Error(fullErrorDetails);
+    } catch (error) {
+        console.error("--- OneSignal Push Notification FAILED (using Axios) ---");
+        // This provides the clear error message we've been looking for
+        if (error.response) {
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error("Error Message:", error.message);
+        }
+        console.error("------------------------------------------------------");
+        
+        const errorMessage = error.response?.data?.errors?.[0] || error.message;
+        throw new Error(errorMessage);
     }
 }
 
@@ -506,6 +501,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
