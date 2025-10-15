@@ -369,7 +369,7 @@ function processNotifications(fullData) {
     const newPlayerStatusMap = new Map();
     const allPlayersWithLocation = new Map();
 
-    [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
+    [...fullData.located, ...fullData.safeZone, ...full_data.stealthed].forEach(p => {
         if (p.lat && p.lng) allPlayersWithLocation.set(p.u, { lat: p.lat, lng: p.lng });
         if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
         else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
@@ -384,18 +384,17 @@ function processNotifications(fullData) {
         const userExternalId = settings.myPlayerId;
         if (!userExternalId) return;
 
-        // Get the user's location, but DON'T exit if it's not found.
-        // It might not be needed for worldwide alerts.
-        const myPlayerLocation = allPlayersWithLocation.get(userExternalId);
-
+        // --- CORE FIX: Prioritize self-reported live location over API location ---
+        const receiverLocation = socket.data.liveLocation || allPlayersWithLocation.get(userExternalId);
+        
         const previouslyInRange = socket.data.playersInRange || new Set();
         const currentlyInRange = new Set();
 
-        // FIX: Only process proximity alerts if the user has a location and the setting is on.
-        if (myPlayerLocation && settings.proximityMiles > 0) {
+        // Use `receiverLocation` for all distance calculations
+        if (receiverLocation && settings.proximityMiles > 0) {
             fullData.located.forEach(otherPlayer => {
                 if (otherPlayer.u === userExternalId) return;
-                const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, otherPlayer.lat, otherPlayer.lng);
+                const distance = calculateDistanceMiles(receiverLocation.lat, receiverLocation.lng, otherPlayer.lat, otherPlayer.lng);
                 if (distance <= settings.proximityMiles) {
                     currentlyInRange.add(otherPlayer.u);
                     if (!previouslyInRange.has(otherPlayer.u)) {
@@ -415,11 +414,10 @@ function processNotifications(fullData) {
                 const ghostLastLocation = playerLastKnownLocationMap.get(playerId);
                 if (!ghostPlayerInfo || !ghostLastLocation) return;
                 
-                let isInRange = settings.ghostMiles === -1; // Worldwide is true by default.
+                let isInRange = settings.ghostMiles === -1; 
 
-                // FIX: Only check distance if it's NOT a worldwide alert AND the user has a location.
-                if (!isInRange && settings.ghostMiles > 0 && myPlayerLocation) {
-                    const distance = calculateDistanceMiles(myPlayerLocation.lat, myPlayerLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
+                if (!isInRange && settings.ghostMiles > 0 && receiverLocation) {
+                    const distance = calculateDistanceMiles(receiverLocation.lat, receiverLocation.lng, ghostLastLocation.lat, ghostLastLocation.lng);
                     if (distance <= settings.ghostMiles) isInRange = true;
                 }
 
@@ -676,7 +674,11 @@ io.on('connection', (socket) => {
         socket.data.playersInRange = new Set();
     });
     
-    // REMOVED `register_one_signal` listener as it is no longer needed.
+    socket.on('live_location_update', (coords) => {
+        if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number') {
+            socket.data.liveLocation = { lat: coords.lat, lng: coords.lng };
+        }
+    });
 
     socket.on('disconnect', () => {
         console.log(`User ${socket.data.username || 'unauthenticated'} disconnected.`);
@@ -693,6 +695,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
