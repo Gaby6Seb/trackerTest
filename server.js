@@ -241,33 +241,38 @@ app.post('/logout', (req, res) => {
 
 // --- FIXED: Notification Sending Function ---
 async function sendPushNotification(externalUserIds, heading, content) {
-    if (!oneSignalClient || !externalUserIds || externalUserIds.length === 0) {
+    if (!oneSignalClient || !externalUserIds || !externalUserIds.length) {
         const errorMsg = "Push notifications are not configured or target user ID was missing.";
         console.warn("Skipping push notification:", errorMsg, { externalUserIds });
         throw new Error(errorMsg);
     }
 
-    const notification = {
-        app_id: ONESIGNAL_APP_ID,
-        include_aliases: {
-            external_id: externalUserIds
-        },
-        target_channel: 'push',
-        headings: { en: heading },
-        contents: { en: content },
+    // --- Using the correct, official SDK method as you discovered ---
+    const notification = new OneSignal.Notification();
+    notification.app_id = ONESIGNAL_APP_ID;
+    notification.include_aliases = {
+        external_id: externalUserIds
     };
+    notification.target_channel = 'push';
+    notification.contents = {
+        en: content
+    };
+    notification.headings = {
+        en: heading
+    };
+    // --- End of correct method ---
 
     try {
-        console.log(`Attempting to send push to external_id(s): [${externalUserIds.join(', ')}]`);
+        console.log(`Attempting to send notification to external_id(s): [${externalUserIds.join(', ')}]`);
         const response = await oneSignalClient.createNotification(notification);
-        
+
         if (response.errors && response.errors.length > 0) {
-             const errorMessage = `OneSignal API returned errors: ${JSON.stringify(response.errors)}`;
-             console.error(errorMessage);
-             throw new Error(errorMessage);
+            const errorMessage = `OneSignal API returned errors: ${JSON.stringify(response.errors)}`;
+            console.error(errorMessage);
+            throw new Error(errorMessage);
         }
         if (response.recipients === 0) {
-             console.warn("OneSignal Warning: Notification sent, but the target user has no subscribed devices. Did they click 'Allow'?");
+            console.warn("OneSignal Warning: Notification sent, but the target user has no subscribed devices. Did they click 'Allow'?");
         }
 
         console.log(`Push notification sent successfully. ID: ${response.id}, Recipients: ${response.recipients}`);
@@ -275,34 +280,19 @@ async function sendPushNotification(externalUserIds, heading, content) {
 
     } catch (e) {
         let fullErrorDetails = "An unknown error occurred with the OneSignal SDK.";
-        
-        // --- THIS IS THE CRITICAL FIX ---
-        // The error object 'e' itself has the .text() method, it's not e.body.
         if (e && typeof e.text === 'function') {
             try {
-                // Read the actual text content from the API error response
-                const errorBodyText = await e.text();
-                // Often the body is a JSON string, so we try to parse it for cleaner logging
-                try {
-                    const parsedBody = JSON.parse(errorBodyText);
-                    fullErrorDetails = parsedBody.errors.map(err => `${err.title} (code: ${err.code})`).join(', ');
-                } catch (jsonError) {
-                    // If parsing fails, just use the raw text
-                    fullErrorDetails = errorBodyText;
-                }
+                fullErrorDetails = await e.text();
             } catch (parseError) {
                 fullErrorDetails = "Could not parse the error response from OneSignal.";
             }
         } else if (e.message) {
             fullErrorDetails = e.message;
         }
-        // --- END OF CRITICAL FIX ---
 
         console.error("--- OneSignal Push Notification FAILED ---");
         console.error("Full Error Details:", fullErrorDetails);
         console.error("-----------------------------------------");
-
-        // Re-throw the clear error message so the calling function can handle it
         throw new Error(fullErrorDetails);
     }
 }
@@ -516,6 +506,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
