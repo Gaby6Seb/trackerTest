@@ -241,6 +241,9 @@ app.post('/logout', (req, res) => {
 
 // --- FIXED: Notification Sending Function ---
 async function sendPushNotification(externalUserIds, heading, content, retries = 3, delay = 2000) {
+    console.log(externalUserIds);
+    console.log(heading);
+    console.log(content);
     if (!oneSignalClient || !externalUserIds || externalUserIds.length === 0 || !externalUserIds.every(id => typeof id === 'string' && id)) {
         console.warn("Cannot send push notification: Invalid client or external user IDs provided.", { externalUserIds });
         return;
@@ -255,6 +258,7 @@ async function sendPushNotification(externalUserIds, heading, content, retries =
         headings: { en: heading },
         contents: { en: content },
     };
+    console.log(notification);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -482,6 +486,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
