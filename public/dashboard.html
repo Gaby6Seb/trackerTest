@@ -126,12 +126,18 @@ function initializeOneSignal() {
         return;
     }
 
+    window.OneSignal.SERVICE_WORKER_PATH = '/OneSignalSDKWorker.js';
+    window.OneSignal.SERVICE_WORKER_UPDATER_PATH = '/OneSignalSDKUpdaterWorker.js';
+
     OneSignal.init({
         appId: "95e17686-f5df-4181-a59a-f89457df2973",
         allowLocalhostAsSecureOrigin: true,
         serviceWorkerPath: '/OneSignalSDKWorker.js',
         serviceWorkerUpdaterPath: '/OneSignalSDKUpdaterWorker.js',
         serviceWorkerParam: { scope: '/' },
+        notifyButton: {
+            enable: false // Disable default notify button; we're using a custom one
+        }
     }).then(() => {
         console.log("OneSignal SDK Initialized successfully.");
         if (OneSignal.User && OneSignal.User.pushSubscription) {
@@ -266,6 +272,7 @@ function startTimerUpdates() {
 }
 
 socket.on('connect', () => {
+    console.log('Socket ID:', socket.id);
     document.querySelector('.subtitle').textContent = 'Authenticating...';
     socket.emit('authenticate', { username });
 });
@@ -496,43 +503,39 @@ const subscribeContainer = document.querySelector('.onesignal-customlink-contain
 
 function handleSubscribeClick() {
     OneSignalDeferred.push(async function(OneSignal) {
-        const permission = await OneSignal.Notifications.permission;
-        if (permission === 'denied') {
-            alert('Notifications are blocked. Please enable them in your browser settings and try again.');
-            return;
-        }
-        if (permission === 'default') {
-            // Trigger the native permission prompt
-            await OneSignal.showNativePrompt();
-            OneSignal.User.pushSubscription.optIn().then(() => {
+        try {
+            const permission = await OneSignal.Notifications.permission;
+            if (permission === 'denied') {
+                alert('Notifications are blocked. Please enable them in your browser settings and try again.');
+                return;
+            }
+            if (permission === 'default') {
+                await OneSignal.showNativePrompt();
+                await OneSignal.User.pushSubscription.optIn();
+                console.log('User successfully opted in after permission prompt.');
+                checkSubscriptionStatus();
+            } else {
+                await OneSignal.User.pushSubscription.optIn();
                 console.log('User successfully opted in.');
                 checkSubscriptionStatus();
-            }).catch((error) => {
-                console.error('Subscription error:', error);
-                alert('Failed to subscribe to notifications. Please check browser permissions.');
-            });
-        } else {
-            // Already granted, ensure subscription
-            OneSignal.User.pushSubscription.optIn().then(() => {
-                console.log('User successfully opted in.');
-                checkSubscriptionStatus();
-            }).catch((error) => {
-                console.error('Subscription error:', error);
-                alert('Failed to subscribe to notifications. Please check browser permissions.');
-            });
+            }
+        } catch (error) {
+            console.error('Subscription error:', error);
+            alert('Failed to subscribe to notifications. Please check browser permissions.');
         }
     });
 }
 
 function handleUnsubscribeClick() {
-    OneSignalDeferred.push(function(OneSignal) {
-        OneSignal.User.pushSubscription.optOut().then(() => {
+    OneSignalDeferred.push(async function(OneSignal) {
+        try {
+            await OneSignal.User.pushSubscription.optOut();
             console.log('User successfully opted out.');
             checkSubscriptionStatus();
-        }).catch((error) => {
+        } catch (error) {
             console.error('Unsubscription error:', error);
             alert('Failed to unsubscribe from notifications.');
-        });
+        }
     });
 }
 
@@ -540,31 +543,38 @@ function checkSubscriptionStatus() {
     OneSignalDeferred.push(async function(OneSignal) {
         subscribeContainer.innerHTML = '';
         const button = document.createElement('button');
-        const permission = await OneSignal.Notifications.permission;
-
-        if (permission === 'denied') {
-            button.textContent = 'Enable Notifications (Blocked)';
-            button.onclick = () => {
-                alert('Notifications are blocked. Please enable them in your browser settings and try again.');
-            };
-            button.className = 'subscribe-btn disabled';
-        } else if (OneSignal.User && OneSignal.User.pushSubscription) {
-            const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
-            if (isSubscribed) {
-                button.textContent = 'Unsubscribe from Push Notifications';
-                button.onclick = handleUnsubscribeClick;
-                button.className = 'unsubscribe-btn';
+        try {
+            const permission = await OneSignal.Notifications.permission;
+            if (permission === 'denied') {
+                button.textContent = 'Enable Notifications (Blocked)';
+                button.onclick = () => {
+                    alert('Notifications are blocked. Please enable them in your browser settings and try again.');
+                };
+                button.className = 'subscribe-btn disabled';
+            } else if (OneSignal.User && OneSignal.User.pushSubscription) {
+                const isSubscribed = await OneSignal.User.pushSubscription.getOptedIn();
+                if (isSubscribed) {
+                    button.textContent = 'Unsubscribe from Push Notifications';
+                    button.onclick = handleUnsubscribeClick;
+                    button.className = 'unsubscribe-btn';
+                } else {
+                    button.textContent = 'Subscribe to Push Notifications';
+                    button.onclick = handleSubscribeClick;
+                    button.className = 'subscribe-btn';
+                }
             } else {
                 button.textContent = 'Subscribe to Push Notifications';
                 button.onclick = handleSubscribeClick;
                 button.className = 'subscribe-btn';
             }
-        } else {
-            button.textContent = 'Subscribe to Push Notifications';
-            button.onclick = handleSubscribeClick;
-            button.className = 'subscribe-btn';
+            subscribeContainer.appendChild(button);
+        } catch (error) {
+            console.error('Error checking subscription status:', error);
+            button.textContent = 'Notifications Unavailable';
+            button.disabled = true;
+            button.className = 'subscribe-btn disabled';
+            subscribeContainer.appendChild(button);
         }
-        subscribeContainer.appendChild(button);
     });
 }
 
