@@ -276,22 +276,24 @@ async function sendPushNotification(externalUserIds, heading, content, retries =
 
 // --- FIXED: Test Notification Endpoint ---
 app.post('/test-notification', async (req, res) => {
-    const { socketId } = req.body;
-    if (!socketId) {
-        return res.status(400).json({ message: 'Socket ID is required' });
+    // Get the externalId directly from the request body
+    const { externalId } = req.body;
+
+    if (!externalId) {
+        return res.status(400).json({ message: 'External ID is required.' });
     }
 
-    const socket = io.sockets.sockets.get(socketId);
-    const userExternalId = socket?.data?.notificationSettings?.myPlayerId;
-
-    if (!socket || !userExternalId) {
-        return res.status(400).json({ message: 'Invalid socket ID or no user profile selected for notifications' });
-    }
     try {
-        await sendPushNotification([userExternalId], 'Test Notification', 'This is a test notification from the server.');
-        res.json({ message: 'Test notification sent' });
+        console.log(`Sending test notification to external_id: ${externalId}`);
+        await sendPushNotification(
+            [externalId], 
+            'Test Notification', 
+            'This is a test notification from the server.'
+        );
+        res.json({ success: true, message: 'Test notification sent' });
     } catch (err) {
-        res.status(500).json({ message: 'Failed to send test notification', error: err.message });
+        console.error("Failed to send test notification:", err);
+        res.status(500).json({ success: false, message: 'Failed to send test notification', error: err.message });
     }
 });
 
@@ -480,5 +482,6 @@ async function startServer() {
 }
 
 startServer();
+
 
 
