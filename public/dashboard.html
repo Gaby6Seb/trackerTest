@@ -734,9 +734,44 @@ function setupNotificationModal(teammates) {
         localStorage.setItem('notificationSettings', JSON.stringify(settings));
         socket.emit('update_notification_settings', settings);
 
+        // --- NEW & IMPORTANT: Identify the user to OneSignal ---
+        try {
+            if (settings.myPlayerId) {
+                console.log(`Logging into OneSignal with external_id: ${settings.myPlayerId}`);
+                await window.OneSignal.login(settings.myPlayerId);
+                console.log(`Successfully identified user to OneSignal.`);
+            } else {
+                // If the user deselects themselves, we should log them out.
+                console.log('No player selected, logging out of OneSignal identity.');
+                await window.OneSignal.logout();
+            }
+        } catch (error) {
+            console.error('OneSignal login/logout error:', error);
+            alert('Could not update your notification identity. Please try again.');
+        }
+        // --- END OF NEW CODE ---
+
         closeModal();
         alert('Alert preferences saved!');
     };
+
+    // --- MODIFICATION: When changing players, log out the old identity ---
+    changePlayerLink.onclick = (e) => {
+        e.preventDefault();
+        
+        // --- NEW ---
+        if (window.OneSignal) {
+            window.OneSignal.logout();
+            console.log('Logged out of OneSignal identity before changing player.');
+        }
+        // --- END NEW ---
+
+        localStorage.removeItem('myPlayerId');
+        localStorage.removeItem('myPlayerName');
+        playerSelectionStep.style.display = 'block';
+        settingsStep.style.display = 'none';
+    };
+}
 }
 
 socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
@@ -757,6 +792,7 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
 
 
 
