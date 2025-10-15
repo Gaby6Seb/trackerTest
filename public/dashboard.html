@@ -31,43 +31,52 @@
     </div>
   </div>
   <div id="map"></div>
+  <!-- REPLACEMENT HTML for controls-container -->
   <div id="controls-container">
-    <div id="search-container">
-        <input type="text" id="player-search" placeholder="Search names or teams (e.g., John, Blue Team)...">
-        <button id="clear-search-btn">&times;</button>
+    <!-- This new wrapper is for the mobile layout -->
+    <div id="mobile-panel-header">
+        <div id="panel-grabber"></div>
+        <div id="search-container">
+            <input type="text" id="player-search" placeholder="Search names or teams...">
+            <button id="clear-search-btn">&times;</button>
+        </div>
+        <div id="location-control">
+            <button id="find-me-btn">📍 Find Me</button>
+            <label id="follow-me-label" style="display: none;">
+                <input type="checkbox" id="follow-me-toggle"> Follow
+            </label>
+        </div>
     </div>
-    <div id="filter-toggles">
-      <label for="show-all-toggle">
-        <input type="checkbox" id="show-all-toggle">
-        Show All Players
-      </label>
-    </div>
-    <div id="location-control">
-    <button id="find-me-btn">📍 Find Me</button>
-    <label id="follow-me-label" style="display: none; margin-left: 10px;">
-        <input type="checkbox" id="follow-me-toggle"> Follow Me
-    </label>
-</div>
-    <div id="safezone-container" class="minimized">
-        <h2 id="safezone-header">
-            Players in Safe Zone
-            <span id="safezone-toggle-icon">+</span>
-        </h2>
-        <ul id="safezone-list"></ul>
-    </div>
-    <div id="stealth-container" class="minimized">
-        <h2 id="stealth-header">
-            Stealthed Players
-            <span id="stealth-toggle-icon">+</span>
-        </h2>
-        <ul id="stealth-list"></ul>
-    </div>
-    <div id="not-located-container" class="minimized">
-        <h2 id="not-located-header">
-            Players Not on Map
-            <span id="toggle-icon">+</span>
-        </h2>
-        <ul id="not-located-list"></ul>
+
+    <!-- The rest of the controls are now grouped here -->
+    <div id="collapsible-controls-area">
+        <div id="filter-toggles">
+            <label for="show-all-toggle">
+                <input type="checkbox" id="show-all-toggle">
+                Show All Players
+            </label>
+        </div>
+        <div id="safezone-container" class="minimized">
+            <h2 id="safezone-header">
+                Players in Safe Zone
+                <span id="safezone-toggle-icon">+</span>
+            </h2>
+            <ul id="safezone-list"></ul>
+        </div>
+        <div id="stealth-container" class="minimized">
+            <h2 id="stealth-header">
+                Stealthed Players
+                <span id="stealth-toggle-icon">+</span>
+            </h2>
+            <ul id="stealth-list"></ul>
+        </div>
+        <div id="not-located-container" class="minimized">
+            <h2 id="not-located-header">
+                Players Not on Map
+                <span id="toggle-icon">+</span>
+            </h2>
+            <ul id="not-located-list"></ul>
+        </div>
     </div>
   </div>
 
@@ -536,9 +545,22 @@ function setupAccordionPanels() {
 
 // Initialize the new behavior
 setupAccordionPanels();
+
+  function setupMobilePanelToggle() {
+    const grabber = document.getElementById('panel-grabber');
+    const controlsContainer = document.getElementById('controls-container');
+
+    if (grabber && controlsContainer) {
+        grabber.addEventListener('click', () => {
+            controlsContainer.classList.toggle('panel-collapsed');
+        });
+    }
+}
+  
 </script>
 </body>
 </html>
+
 
 
 
