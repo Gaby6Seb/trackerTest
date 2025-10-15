@@ -126,23 +126,35 @@ function initializeOneSignal() {
         return;
     }
 
+    // Enable OneSignal debug logging
+    OneSignal.log.setLevel('trace');
+
     OneSignal.init({
         appId: "95e17686-f5df-4181-a59a-f89457df2973",
         allowLocalhostAsSecureOrigin: true,
-        serviceWorkerPath: '/OneSignalSDKWorker.js',
+        serviceWorkerPath: '/OneSignalSDKWorker.js', // Ensure correct path
         serviceWorkerUpdaterPath: '/OneSignalSDKUpdaterWorker.js',
         serviceWorkerParam: { scope: '/' },
         notifyButton: {
             enable: false // Disable default notify button; we're using a custom one
         }
     }).then(async () => {
-        console.log("OneSignal SDK Initialized successfully.");
+        console.log("OneSignal SDK initialized successfully.");
         try {
             // Check if push subscriptions are supported
             if (!navigator.serviceWorker || !('PushManager' in window)) {
                 console.warn("Push notifications are not supported in this browser.");
                 document.getElementById('notification-btn').style.display = 'none';
                 return;
+            }
+
+            // Log service worker registration status
+            const registration = await navigator.serviceWorker.getRegistration('/');
+            if (registration) {
+                console.log("Service worker registered with scope:", registration.scope);
+                console.log("Active service worker script:", registration.active?.scriptURL);
+            } else {
+                console.warn("No service worker registered.");
             }
 
             if (OneSignal.User && OneSignal.User.pushSubscription) {
@@ -170,12 +182,12 @@ function initializeOneSignal() {
             }
         } catch (error) {
             console.error("Error during OneSignal initialization:", error);
-            alert('Failed to set up push notifications. Please try refreshing the page.');
+            alert('Failed to set up push notifications. Please check console for details.');
             document.getElementById('notification-btn').style.display = 'none';
         }
     }).catch((error) => {
         console.error("OneSignal SDK initialization failed:", error);
-        alert('Failed to initialize push notifications. Please try refreshing the page.');
+        alert('Failed to initialize push notifications: ' + error.message);
         document.getElementById('notification-btn').style.display = 'none';
     });
 }
@@ -731,3 +743,4 @@ setupCollapsiblePanel('not-located-header', 'not-located-container', 'toggle-ico
 </script>
 </body>
 </html>
+
