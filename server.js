@@ -240,13 +240,11 @@ app.post('/logout', (req, res) => {
 
 
 // --- FIXED: Notification Sending Function ---
-async function sendPushNotification(externalUserIds, heading, content, retries = 3, delay = 2000) {
-    console.log(externalUserIds);
-    console.log(heading);
-    console.log(content);
-    if (!oneSignalClient || !externalUserIds || externalUserIds.length === 0 || !externalUserIds.every(id => typeof id === 'string' && id)) {
-        console.warn("Cannot send push notification: Invalid client or external user IDs provided.", { externalUserIds });
-        return;
+async function sendPushNotification(externalUserIds, heading, content) {
+    if (!oneSignalClient || !externalUserIds || externalUserIds.length === 0) {
+        console.warn("Skipping push notification: Invalid client or external user IDs.", { externalUserIds });
+        // Throw an error so the caller knows it failed
+        throw new Error("Push notifications are not configured or target user ID was missing.");
     }
 
     const notification = {
@@ -258,22 +256,48 @@ async function sendPushNotification(externalUserIds, heading, content, retries =
         headings: { en: heading },
         contents: { en: content },
     };
-    console.log(notification);
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            console.log(`Sending push to external_id(s): [${externalUserIds.join(', ')}], attempt ${attempt}`);
-            const response = await oneSignalClient.createNotification(notification);
-            console.log(`Push notification sent successfully: ${response.id}`);
-            return;
-        } catch (e) {
-            console.error(`Error sending OneSignal push (attempt ${attempt}):`, e.body || e.message);
-            if (attempt < retries) {
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                console.error("Failed to send push notification after all retries.");
-            }
+    try {
+        console.log(`Attempting to send push to external_id(s): [${externalUserIds.join(', ')}]`);
+        const response = await oneSignalClient.createNotification(notification);
+        
+        // Check for errors in the successful response body (e.g., no subscribed users)
+        if (response.errors && response.errors.length > 0) {
+             console.error("OneSignal API returned errors in the response:", response.errors);
+             throw new Error(`OneSignal Error: ${response.errors[0]}`);
         }
+        if (response.recipients === 0) {
+             console.warn("OneSignal Warning: Notification was sent, but the target user has no subscribed devices.");
+             // This isn't a fatal error, but good to know.
+        }
+
+        console.log(`Push notification sent successfully. ID: ${response.id}, Recipients: ${response.recipients}`);
+        return response; // Success
+
+    } catch (e) {
+        let fullErrorDetails = "An unknown error occurred with the OneSignal SDK.";
+        
+        // This handles API errors where the response body contains the error details
+        if (e.body) {
+            try {
+                // The body might be a stringified JSON
+                const parsedBody = JSON.parse(e.body);
+                fullErrorDetails = parsedBody.errors.map(err => err.title).join(', ');
+            } catch (jsonError) {
+                // Or it might just be a plain text string
+                fullErrorDetails = e.body;
+            }
+        } else if (e.message) {
+            // This handles network errors or other generic JS errors
+            fullErrorDetails = e.message;
+        }
+
+        console.error("--- OneSignal Push Notification FAILED ---");
+        console.error("Full Error Details:", fullErrorDetails);
+        console.error("-----------------------------------------");
+
+        // Re-throw the clear error message so the calling function can handle it
+        throw new Error(fullErrorDetails);
     }
 }
 
@@ -486,6 +510,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
