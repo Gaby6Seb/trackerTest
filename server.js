@@ -242,9 +242,9 @@ app.post('/logout', (req, res) => {
 // --- FIXED: Notification Sending Function ---
 async function sendPushNotification(externalUserIds, heading, content) {
     if (!oneSignalClient || !externalUserIds || externalUserIds.length === 0) {
-        console.warn("Skipping push notification: Invalid client or external user IDs.", { externalUserIds });
-        // Throw an error so the caller knows it failed
-        throw new Error("Push notifications are not configured or target user ID was missing.");
+        const errorMsg = "Push notifications are not configured or target user ID was missing.";
+        console.warn("Skipping push notification:", errorMsg, { externalUserIds });
+        throw new Error(errorMsg);
     }
 
     const notification = {
@@ -261,36 +261,42 @@ async function sendPushNotification(externalUserIds, heading, content) {
         console.log(`Attempting to send push to external_id(s): [${externalUserIds.join(', ')}]`);
         const response = await oneSignalClient.createNotification(notification);
         
-        // Check for errors in the successful response body (e.g., no subscribed users)
         if (response.errors && response.errors.length > 0) {
-             console.error("OneSignal API returned errors in the response:", response.errors);
-             throw new Error(`OneSignal Error: ${response.errors[0]}`);
+             const errorMessage = `OneSignal API returned errors: ${JSON.stringify(response.errors)}`;
+             console.error(errorMessage);
+             throw new Error(errorMessage);
         }
         if (response.recipients === 0) {
-             console.warn("OneSignal Warning: Notification was sent, but the target user has no subscribed devices.");
-             // This isn't a fatal error, but good to know.
+             console.warn("OneSignal Warning: Notification sent, but the target user has no subscribed devices. Did they click 'Allow'?");
         }
 
         console.log(`Push notification sent successfully. ID: ${response.id}, Recipients: ${response.recipients}`);
-        return response; // Success
+        return response;
 
     } catch (e) {
         let fullErrorDetails = "An unknown error occurred with the OneSignal SDK.";
         
-        // This handles API errors where the response body contains the error details
-        if (e.body) {
+        // --- THIS IS THE CRITICAL FIX ---
+        // The error object 'e' itself has the .text() method, it's not e.body.
+        if (e && typeof e.text === 'function') {
             try {
-                // The body might be a stringified JSON
-                const parsedBody = JSON.parse(e.body);
-                fullErrorDetails = parsedBody.errors.map(err => err.title).join(', ');
-            } catch (jsonError) {
-                // Or it might just be a plain text string
-                fullErrorDetails = e.body;
+                // Read the actual text content from the API error response
+                const errorBodyText = await e.text();
+                // Often the body is a JSON string, so we try to parse it for cleaner logging
+                try {
+                    const parsedBody = JSON.parse(errorBodyText);
+                    fullErrorDetails = parsedBody.errors.map(err => `${err.title} (code: ${err.code})`).join(', ');
+                } catch (jsonError) {
+                    // If parsing fails, just use the raw text
+                    fullErrorDetails = errorBodyText;
+                }
+            } catch (parseError) {
+                fullErrorDetails = "Could not parse the error response from OneSignal.";
             }
         } else if (e.message) {
-            // This handles network errors or other generic JS errors
             fullErrorDetails = e.message;
         }
+        // --- END OF CRITICAL FIX ---
 
         console.error("--- OneSignal Push Notification FAILED ---");
         console.error("Full Error Details:", fullErrorDetails);
@@ -510,6 +516,7 @@ async function startServer() {
 }
 
 startServer();
+
 
 
 
