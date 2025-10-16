@@ -397,14 +397,16 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
     const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
     const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
     const stealthedClass = isStealthed ? 'stealthed-marker' : '';
-    const lastKnownClass = (isLastKnown && !isImmune) ? 'last-known-marker' : ''; // Prevent grayscale if immune
+    // KEY FIX: Do NOT apply the grayscale 'last-known-marker' class if the player is immune.
+    const lastKnownClass = (isLastKnown && !isImmune) ? 'last-known-marker' : '';
     const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
     let pinStyles = `background-color: ${color || '#3388ff'};`;
     if (!avatarUrl) {
         pinStyles += `border-color: ${color || '#3388ff'};`;
     }
     const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
-    const shieldHtml = isImmune ? '<div class="marker-shield">🛡️</div>' : ''; // Add shield icon
+    // KEY ADDITION: Add a shield icon if the player is immune.
+    const shieldHtml = isImmune ? '<div class="marker-shield">🛡️</div>' : '';
 
     const markerHtml = `
         <div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}">
@@ -420,41 +422,20 @@ const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isSte
     return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize, iconAnchor });
 };
 
-// --- MODIFICATION: Updated panel and timer logic ---
 socket.on('locationUpdate', (data) => {
     document.querySelector('.subtitle').textContent = 'Live';
+    // This part is now correct because the server sends immune players in the 'located' array
     allPlayersWithLocation = [
         ...data.located.map(p => ({ ...p, statusType: 'located' })),
         ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
         ...data.stealthed.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'stealthed' })),
     ];
     allPanelData = data;
-
-    // Create a combined list for the Immune/Stealthed panel
-    const specialStatusData = [];
-    const specialStatusUIDs = new Set();
-    
-    // Add all stealthed players first (they could be immune OR stealthed)
-    (data.stealthed || []).forEach(p => {
-        specialStatusData.push({ ...p, specialStatus: p.isImmune ? 'Immune' : 'Stealthed' });
-        specialStatusUIDs.add(p.u);
-    });
-    
-    // Now add all other immune players who aren't already in the list (e.g., from located/safezone)
-    const otherPlayers = [...(data.located || []), ...(data.safeZone || []), ...(data.notLocated || [])];
-    otherPlayers.forEach(p => {
-        if (p.isImmune && !specialStatusUIDs.has(p.u)) {
-            specialStatusData.push({ ...p, specialStatus: 'Immune' });
-            specialStatusUIDs.add(p.u);
-        }
-    });
-
     const listMapping = [
         { containerId: 'safezone-container', listId: 'safezone-list', data: data.safeZone },
-        { containerId: 'stealth-container', listId: 'stealth-list', data: specialStatusData },
+        { containerId: 'stealth-container', listId: 'stealth-list', data: data.stealthed },
         { containerId: 'not-located-container', listId: 'not-located-list', data: data.notLocated, reasonKey: 'reason' }
     ];
-
     listMapping.forEach(({ containerId, listId, data: players, reasonKey }) => {
         const container = document.getElementById(containerId);
         const list = document.getElementById(listId);
@@ -470,18 +451,17 @@ socket.on('locationUpdate', (data) => {
                     listItem.onclick = () => panToLastLocation(player.lat, player.lng);
                 }
                 
+                // --- MODIFIED: Handle immunity label and timers ---
                 let timerHtml = '';
-                let statusLabel = '';
-                if (containerId === 'stealth-container') {
-                    statusLabel = player.specialStatus ? ` - ${player.specialStatus}` : '';
-                    const expiresAt = player.immunityExpiresAt || player.stealthExpiresAt;
-                    if (expiresAt) {
-                        // Use a generic timer class for both immunity and stealth
-                        timerHtml = `<span class="status-timer" data-expires-at="${expiresAt}"></span>`;
-                    }
+                const immunityLabel = player.isImmune ? ' (Immune)' : '';
+                // Use whichever expiration date is available (immunity takes precedence)
+                const expiresAt = player.immunityExpiresAt || player.stealthExpiresAt;
+                if (expiresAt) {
+                    // Use a generic class for the timer updater to find
+                    timerHtml = `<span class="status-timer" data-expires-at="${expiresAt}"></span>`;
                 }
-                
-                listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${statusLabel}${timerHtml}`;
+
+                listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${immunityLabel}${timerHtml}`;
                 list.appendChild(listItem);
             });
         } else {
@@ -523,8 +503,7 @@ function getDirections(buttonElement) {
     
     window.open(url, '_blank');
 }
-function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayers(); const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean); const foundPlayerCoords = []; const updatedUids = new Set(); allPlayersWithLocation.forEach(user => { const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType, isImmune } = user; const isNeutral = role !== 'teammate' && role !== 'target'; const shouldDisplay = showAllPlayers || !isNeutral; if (!shouldDisplay) return; const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase(); const fullTeamName = (teamName || '').toLowerCase(); const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term)); if (isMatch) { updatedUids.add(u); foundPlayerCoords.push(L.latLng(lat, lng)); let popupContent; const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed'; if (isLastKnown) { popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } else { const batteryIcon = isCharging ? '⚡' : '🔋'; const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`; let roleLabel = ''; if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>'; else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>'; const immunityStatus = isImmune ? '<strong>Status:</strong> <span style="color: #3498db;">Immune</span><br>' : ''; popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body">${immunityStatus}<strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } const isStealthed = statusType === 'stealthed'; const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed, isImmune); if (currentMarkers[u]) { currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent); } else { currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent); } markers.addLayer(currentMarkers[u]); } }); const currentlyTracked = markers.getLayers().length; const subtitleEl = document.querySelector('.subtitle'); if (subtitleEl.textContent !== 'Connecting...' && subtitleEl.textContent !== 'Authenticating...') { subtitleEl.textContent = `Tracking ${currentlyTracked} players on map.`; } if (markers.getLayers().length === 0 && searchTerms.length > 0) { findAndExpandList(searchTerms[0]); } else { document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted')); } if (shouldFitBounds) { if (searchTerms.length > 0 && foundPlayerCoords.length > 0) { if (foundPlayerCoords.length > 1) { map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 }); } else { map.setView(foundPlayerCoords[0], 16); if (updatedUids.size === 1) { const singleMarker = currentMarkers[updatedUids.values().next().value]; if (singleMarker) singleMarker.openPopup(); } } } else { const allVisibleCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng)); if (allVisibleCoords.length > 0) { map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] }); } } } for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; } }
-  async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
+function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayers(); const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean); const foundPlayerCoords = []; const updatedUids = new Set(); allPlayersWithLocation.forEach(user => { const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType, isImmune } = user; const isNeutral = role !== 'teammate' && role !== 'target'; const shouldDisplay = showAllPlayers || !isNeutral; if (!shouldDisplay) return; const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase(); const fullTeamName = (teamName || '').toLowerCase(); const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term)); if (isMatch) { updatedUids.add(u); foundPlayerCoords.push(L.latLng(lat, lng)); let popupContent; const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed'; if (isLastKnown && !isImmune) { popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } else { const batteryIcon = isCharging ? '⚡' : '🔋'; const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`; let roleLabel = ''; if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>'; else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>'; const immunityStatus = isImmune ? '<strong>Status:</strong> <span style="color: #3498db;">Immune</span><br>' : ''; popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body">${immunityStatus}<strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } const isStealthed = statusType === 'stealthed'; const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed, isImmune); if (currentMarkers[u]) { currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent); } else { currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent); } markers.addLayer(currentMarkers[u]); } }); const currentlyTracked = markers.getLayers().length; const subtitleEl = document.querySelector('.subtitle'); if (subtitleEl.textContent !== 'Connecting...' && subtitleEl.textContent !== 'Authenticating...') { subtitleEl.textContent = `Tracking ${currentlyTracked} players on map.`; } if (markers.getLayers().length === 0 && searchTerms.length > 0) { findAndExpandList(searchTerms[0]); } else { document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted')); } if (shouldFitBounds) { if (searchTerms.length > 0 && foundPlayerCoords.length > 0) { if (foundPlayerCoords.length > 1) { map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 }); } else { map.setView(foundPlayerCoords[0], 16); if (updatedUids.size === 1) { const singleMarker = currentMarkers[updatedUids.values().next().value]; if (singleMarker) singleMarker.openPopup(); } } } else { const allVisibleCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng)); if (allVisibleCoords.length > 0) { map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] }); } } } for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; } }  async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
 async function checkSubscriptionStatus() { if (!window.OneSignal) return; const subscribeContainer = document.querySelector('.onesignal-customlink-container'); subscribeContainer.innerHTML = ''; const button = document.createElement('button'); try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { button.textContent = 'Enable Notifications (Blocked)'; button.onclick = () => alert('Notifications are blocked. Please enable them in your browser settings and try again.'); button.className = 'subscribe-btn disabled'; } else if (OneSignal.User && OneSignal.User.PushSubscription) { const isSubscribed = OneSignal.User.PushSubscription.optedIn; button.textContent = isSubscribed ? 'Unsubscribe from Push Notifications' : 'Subscribe to Push Notifications'; button.onclick = isSubscribed ? handleUnsubscribeClick : handleSubscribeClick; button.className = isSubscribed ? 'unsubscribe-btn' : 'subscribe-btn'; } else { button.textContent = 'Push Notifications Not Supported'; button.disabled = true; button.className = 'subscribe-btn disabled'; } subscribeContainer.appendChild(button); } catch (error) { console.error('Error checking subscription status:', error); button.textContent = 'Notifications Unavailable'; button.disabled = true; button.className = 'subscribe-btn disabled'; subscribeContainer.appendChild(button); } }
 function setupNotificationModal(teammates) { const modalOverlay = document.getElementById('notification-modal-overlay'); const openBtn = document.getElementById('notification-btn'); const closeBtn = document.getElementById('modal-close-btn'); const playerSelectionStep = document.getElementById('player-selection-step'); const settingsStep = document.getElementById('notification-settings-step'); const teammateList = document.getElementById('teammate-list'); const changePlayerLink = document.getElementById('change-player-link'); const saveBtn = document.getElementById('save-settings-btn'); const settingsTitle = settingsStep.querySelector('h2'); const testBtn = document.getElementById('test-notification-btn'); teammateList.innerHTML = ''; if (teammates && teammates.length > 0) { teammates.forEach(player => { const li = document.createElement('li'); li.textContent = player.name; li.dataset.id = player.id; li.onclick = () => { localStorage.setItem('myPlayerId', player.id); localStorage.setItem('myPlayerName', player.name); showUserSettings(player.name); }; teammateList.appendChild(li); }); } else { playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.'; } const showUserSettings = (playerName) => { playerSelectionStep.style.display = 'none'; settingsStep.style.display = 'block'; settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`; loadSettings(); checkSubscriptionStatus(); }; openBtn.onclick = () => { modalOverlay.style.display = 'flex'; const myPlayerId = localStorage.getItem('myPlayerId'); const myPlayerName = localStorage.getItem('myPlayerName'); if (myPlayerId && myPlayerName) { showUserSettings(myPlayerName); } else { playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; checkSubscriptionStatus(); } }; changePlayerLink.onclick = async (e) => { e.preventDefault(); if (window.OneSignal) { await window.OneSignal.logout(); console.log('Logged out of OneSignal identity.'); } localStorage.removeItem('myPlayerId'); localStorage.removeItem('myPlayerName'); playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; }; const closeModal = () => modalOverlay.style.display = 'none'; closeBtn.onclick = closeModal; modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); }; const enableNotifications = document.getElementById('enable-notifications'); const fieldset = document.getElementById('notification-fieldset');
                                             const proximitySlider = document.getElementById('proximity-radius'); 
@@ -589,6 +568,7 @@ setupAccordionPanels();
 </script>
 </body>
 </html>
+
 
 
 
