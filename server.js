@@ -481,69 +481,41 @@ async function runApiRequests() {
         isFetching = true;
         console.log("--- Starting API Request Cycle ---");
 
-        // Authentication
-        const authHeaders = {
-            "Apikey": API_KEY
-        };
+        // Authentication and Data Fetching (Unchanged)
+        const authHeaders = { "Apikey": API_KEY };
         const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
-        const authResponse = await axios.post(authUrl, authData, {
-            headers: authHeaders
-        });
+        const authResponse = await axios.post(authUrl, authData, { headers: authHeaders });
         const accessToken = authResponse.data.access_token;
         const bearerToken = `Bearer ${accessToken}`;
-        const commonHeaders = {
-            "Apikey": API_KEY,
-            "Authorization": bearerToken,
-            "Content-Type": "application/json"
-        };
-
-        // Fetch Dashboard Data
+        const commonHeaders = { "Apikey": API_KEY, "Authorization": bearerToken, "Content-Type": "application/json" };
         const dashboardUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/dashboard`;
-        const dashboardResponse = await axios.get(dashboardUrl, {
-            headers: commonHeaders
-        });
+        const dashboardResponse = await axios.get(dashboardUrl, { headers: commonHeaders });
         const richDataMap = new Map();
         const targets = dashboardResponse.data.targets || [];
         const myTeam = dashboardResponse.data.myTeam || [];
-        if (myTeam.length > 0 && myTeam[0].team_id) {
-            masterTeamId = myTeam[0].team_id;
-        }
+        if (myTeam.length > 0 && myTeam[0].team_id) { masterTeamId = myTeam[0].team_id; }
         masterTargetIds = new Set(targets.map(p => p.team_id).filter(Boolean));
-        if (dashboardResponse.data.currentPlayer) {
-            richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer);
-        }
+        if (dashboardResponse.data.currentPlayer) { richDataMap.set(dashboardResponse.data.currentPlayer.id, dashboardResponse.data.currentPlayer); }
         targets.forEach(p => p && p.id && richDataMap.set(p.id, p));
         myTeam.forEach(p => p && p.id && richDataMap.set(p.id, p));
-
-        // Fetch Player Pages
         let currentCursor = 0;
         let hasMorePages = true;
         while (hasMorePages) {
             const playersUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/players?cursor=${currentCursor}&filter=all&sort=alphabetical&group=team`;
-            const playersResponse = await axios.get(playersUrl, {
-                headers: commonHeaders
-            });
+            const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
             const pageData = playersResponse.data;
             if (pageData && pageData.teams && pageData.teams.length > 0) {
-                pageData.teams.flatMap(team => team.players || []).forEach(p => {
-                    if (p && p.id && !richDataMap.has(p.id)) {
-                        richDataMap.set(p.id, p);
-                    }
-                });
+                pageData.teams.flatMap(team => team.players || []).forEach(p => { if (p && p.id && !richDataMap.has(p.id)) { richDataMap.set(p.id, p); } });
                 currentCursor++;
             } else {
                 hasMorePages = false;
             }
         }
         lastRichDataMap = richDataMap;
-
-        // Fetch Player Locations
         const locationUrl = `${SUPABASE_URL}/rest/v1/rpc/get_user_locations_for_game_minimal_v2`;
-        const locationResponse = await axios.post(locationUrl, {
-            gid: GAME_ID
-        }, {
-            headers: commonHeaders
-        });
+        const locationResponse = await axios.post(locationUrl, { gid: GAME_ID }, { headers: commonHeaders });
+
+        // Player Categorization Logic
         const locatedPlayers = [];
         const notLocatedPlayers = [];
         const stealthedOrImmunePlayers = [];
@@ -559,11 +531,7 @@ async function runApiRequests() {
             const hasCoords = !isNaN(lat) && !isNaN(lng);
 
             if (hasCoords) {
-                playerLastKnownLocationMap.set(locData.u, {
-                    lat,
-                    lng,
-                    updatedAt: locData.up
-                });
+                playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
                 mapWasUpdated = true;
             }
 
@@ -584,27 +552,33 @@ async function runApiRequests() {
             };
 
             const lastKnown = playerLastKnownLocationMap.get(locData.u);
-            const playerWithCoords = lastKnown ? { ...playerInfo,
-                ...lastKnown
-            } : playerInfo;
+            const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
 
+            // --- REFACTORED LOGIC ---
+            // This is a strict priority order. A player can only be in ONE category.
             if (isImmune) {
-                stealthedOrImmunePlayers.push({ ...playerWithCoords,
-                    isSafeZone: false
-                });
+                if (hasCoords) {
+                    locatedPlayers.push({
+                        ...playerInfo,
+                        lat, lng,
+                        speed: parseFloat(locData.s || '0'),
+                        batteryLevel: parseFloat(locData.bl || '0'),
+                        isCharging: locData.ic,
+                        updatedAt: locData.up,
+                        accuracy: parseFloat(locData.ac || '0'),
+                        isSafeZone: false // Immunity overrides geographic safe zone for status
+                    });
+                } else {
+                    stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
+                }
             } else if (isInGeographicSafeZone) {
-                safeZonePlayers.push({ ...playerWithCoords,
-                    isSafeZone: true
-                });
+                safeZonePlayers.push(playerWithLastKnownCoords);
             } else if (isStealth) {
-                stealthedOrImmunePlayers.push({ ...playerWithCoords,
-                    isSafeZone: false
-                });
+                stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
             } else if (hasCoords) {
                 locatedPlayers.push({
                     ...playerInfo,
-                    lat,
-                    lng,
+                    lat, lng,
                     speed: parseFloat(locData.s || '0'),
                     batteryLevel: parseFloat(locData.bl || '0'),
                     isCharging: locData.ic,
@@ -613,14 +587,13 @@ async function runApiRequests() {
                     isSafeZone: false
                 });
             } else {
-                notLocatedPlayers.push({ ...playerInfo,
-                    reason: 'No location data available'
-                });
+                notLocatedPlayers.push(playerInfo);
             }
         });
 
         if (mapWasUpdated) saveMapToFile();
-
+        
+        // Stealth Timer Fetching (Unchanged)
         const stealthedForTimerFetch = stealthedOrImmunePlayers.filter(p => !p.isImmune);
         const currentStealthedIds = new Set(stealthedForTimerFetch.map(p => p.u));
         for (const player of stealthedForTimerFetch) {
@@ -628,17 +601,9 @@ async function runApiRequests() {
             if (!existingEntry || (Date.now() - existingEntry.fetchedAt > STEALTH_REFETCH_INTERVAL_MS)) {
                 try {
                     const fullUserDataUrl = `${SUPABASE_URL}/rest/v1/rpc/get_map_user_full_v2`;
-                    const response = await axios.post(fullUserDataUrl, {
-                        gid: GAME_ID,
-                        uid: player.u
-                    }, {
-                        headers: commonHeaders
-                    });
+                    const response = await axios.post(fullUserDataUrl, { gid: GAME_ID, uid: player.u }, { headers: commonHeaders });
                     if (response.data && response.data.ive) {
-                        stealthExpirationMap.set(player.u, {
-                            expiresAt: response.data.ive,
-                            fetchedAt: Date.now()
-                        });
+                        stealthExpirationMap.set(player.u, { expiresAt: response.data.ive, fetchedAt: Date.now() });
                     }
                     await new Promise(resolve => setTimeout(resolve, 250));
                 } catch (err) {
@@ -646,18 +611,15 @@ async function runApiRequests() {
                 }
             }
         }
-        for (const uid of stealthExpirationMap.keys()) {
-            if (!currentStealthedIds.has(uid)) stealthExpirationMap.delete(uid);
-        }
+        for (const uid of stealthExpirationMap.keys()) { if (!currentStealthedIds.has(uid)) stealthExpirationMap.delete(uid); }
         const stealthedPlayersWithTimers = stealthedOrImmunePlayers.map(player => {
             if (!player.isImmune) {
-                return { ...player,
-                    stealthExpiresAt: stealthExpirationMap.get(player.u)?.expiresAt || null
-                };
+                return { ...player, stealthExpiresAt: stealthExpirationMap.get(player.u)?.expiresAt || null };
             }
             return player;
         });
 
+        // Final Data & Broadcast
         lastSuccessfulData = {
             located: locatedPlayers,
             notLocated: notLocatedPlayers,
@@ -677,6 +639,7 @@ async function runApiRequests() {
         isFetching = false;
     }
 }
+
 
 // --- Connection and Server Start (Unchanged) ---
 io.on('connection', (socket) => {
