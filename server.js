@@ -522,7 +522,7 @@ async function runApiRequests() {
         const safeZonePlayers = [];
         let mapWasUpdated = false;
 
-        console.log(locationResponse)
+        console.log(pageData)
 
         locationResponse.data.forEach(locData => {
             const richData = richDataMap.get(locData.u);
@@ -707,6 +707,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
