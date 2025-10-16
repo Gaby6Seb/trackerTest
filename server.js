@@ -505,7 +505,7 @@ async function runApiRequests() {
             const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
             const pageData = playersResponse.data;
             pageData.teams.flatMap(team => team.players || []).forEach(player => {
-    console.log(player); // Same as Python's print(player)
+    //console.log(player); // Same as Python's print(player)
     if (player && player.id && !richDataMap.has(player.id)) {
         richDataMap.set(player.id, player);
     }
@@ -713,6 +713,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
