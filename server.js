@@ -535,9 +535,11 @@ async function runApiRequests() {
                 mapWasUpdated = true;
             }
 
+            // --- REFACTORED LOGIC ---
+            // Determine player state flags with corrected logic and clear priority.
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
-            const isInGeographicSafeZone = richData.is_safe || locData.isz;
-            const isStealth = (locData.l === null && locData.a === null);
+            const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
+            const isStealth = (locData.l === null);
 
             const playerInfo = {
                 u: locData.u,
@@ -553,11 +555,11 @@ async function runApiRequests() {
 
             const lastKnown = playerLastKnownLocationMap.get(locData.u);
             const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-
-            // --- REFACTORED LOGIC ---
-            // This is a strict priority order. A player can only be in ONE category.
+            
+            // A strict priority order: Immunity > Geo Safe Zone > Stealth > Located
             if (isImmune) {
                 if (hasCoords) {
+                    // Immune and visible
                     locatedPlayers.push({
                         ...playerInfo,
                         lat, lng,
@@ -566,16 +568,20 @@ async function runApiRequests() {
                         isCharging: locData.ic,
                         updatedAt: locData.up,
                         accuracy: parseFloat(locData.ac || '0'),
-                        isSafeZone: false // Immunity overrides geographic safe zone for status
+                        isSafeZone: false // Explicitly not in a geo safe zone for client rendering
                     });
                 } else {
+                    // Immune but location is hidden (e.g. turned off location)
                     stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
                 }
             } else if (isInGeographicSafeZone) {
+                // Not immune, but in a geographic safe zone. Location is always hidden in this state.
                 safeZonePlayers.push(playerWithLastKnownCoords);
             } else if (isStealth) {
+                // Not immune, not in safe zone, and location is null. This is true stealth.
                 stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
             } else if (hasCoords) {
+                // Not immune, not in safe zone, not stealth, has coords. Standard located player.
                 locatedPlayers.push({
                     ...playerInfo,
                     lat, lng,
@@ -587,6 +593,7 @@ async function runApiRequests() {
                     isSafeZone: false
                 });
             } else {
+                // Fallback for players that don't fit any other category (e.g., location enabled=false from the start)
                 notLocatedPlayers.push(playerInfo);
             }
         });
