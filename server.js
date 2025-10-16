@@ -535,8 +535,6 @@ async function runApiRequests() {
                 mapWasUpdated = true;
             }
 
-            // --- REFACTORED LOGIC ---
-            // Determine player state flags with corrected logic and clear priority.
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
             const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
             const isStealth = (locData.l === null);
@@ -555,23 +553,22 @@ async function runApiRequests() {
 
             const lastKnown = playerLastKnownLocationMap.get(locData.u);
             const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-            
+
+            // --- REVISED LOGIC ---
             // A strict priority order: Immunity > Geo Safe Zone > Stealth > Located
             if (isImmune) {
+                // An immune player is a special category. They go into the 'stealthed' list
+                // for the client to render with a special icon (shield), using the `isImmune` flag.
                 if (hasCoords) {
-                    // Immune and visible
-                    locatedPlayers.push({
+                    // We have live coordinates for the immune player; use them.
+                    stealthedOrImmunePlayers.push({
                         ...playerInfo,
-                        lat, lng,
-                        speed: parseFloat(locData.s || '0'),
-                        batteryLevel: parseFloat(locData.bl || '0'),
-                        isCharging: locData.ic,
-                        updatedAt: locData.up,
-                        accuracy: parseFloat(locData.ac || '0'),
-                        isSafeZone: false // Explicitly not in a geo safe zone for client rendering
+                        lat,
+                        lng,
+                        updatedAt: locData.up
                     });
                 } else {
-                    // Immune but location is hidden (e.g. turned off location)
+                    // Immune but location is not available. Use last known location.
                     stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
                 }
             } else if (isInGeographicSafeZone) {
@@ -722,3 +719,4 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
