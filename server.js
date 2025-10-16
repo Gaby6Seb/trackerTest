@@ -504,8 +504,8 @@ async function runApiRequests() {
             const playersUrl = `${SPLASHIN_API_URL}/games/${GAME_ID}/players?cursor=${currentCursor}&filter=all&sort=alphabetical&group=team`;
             const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
             const pageData = playersResponse.data;
+            console.log(pageData)
             if (pageData && pageData.teams && pageData.teams.length > 0) {
-                console.log(pageData)
                 pageData.teams.flatMap(team => team.players || []).forEach(p => { if (p && p.id && !richDataMap.has(p.id)) { richDataMap.set(p.id, p); } });
                 currentCursor++;
             } else {
@@ -708,6 +708,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
