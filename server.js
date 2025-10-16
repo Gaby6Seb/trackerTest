@@ -505,6 +505,7 @@ async function runApiRequests() {
             const playersResponse = await axios.get(playersUrl, { headers: commonHeaders });
             const pageData = playersResponse.data;
             if (pageData && pageData.teams && pageData.teams.length > 0) {
+                console.log(pageData)
                 pageData.teams.flatMap(team => team.players || []).forEach(p => { if (p && p.id && !richDataMap.has(p.id)) { richDataMap.set(p.id, p); } });
                 currentCursor++;
             } else {
@@ -522,7 +523,7 @@ async function runApiRequests() {
         const safeZonePlayers = [];
         let mapWasUpdated = false;
 
-        console.log(Array.from(richDataMap.values()))
+        
 
         locationResponse.data.forEach(locData => {
             const richData = richDataMap.get(locData.u);
@@ -707,6 +708,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
