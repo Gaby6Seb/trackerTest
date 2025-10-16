@@ -475,6 +475,7 @@ function processNotifications(fullData) {
 }
 
 // --- FIXED: Core API Fetching Logic ---
+// --- FIXED: Core API Fetching Logic ---
 async function runApiRequests() {
     if (isFetching) return;
     try {
@@ -535,7 +536,6 @@ async function runApiRequests() {
                 mapWasUpdated = true;
             }
 
-            // Determine immunity status first, as it's a state, not a location category.
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
             
             const playerInfo = {
@@ -546,33 +546,28 @@ async function runApiRequests() {
                 teamColor: richData.team_color || '#3388ff',
                 avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null,
                 teamId: richData.team_id,
-                isImmune: isImmune, // Carry the immunity flag into every object
+                isImmune: isImmune,
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
 
             const lastKnown = playerLastKnownLocationMap.get(locData.u);
             const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
 
-            // Define location statuses
             const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
-            const isStealth = (locData.l === null);
+            
+            // This now includes the API's real-time safety flag
+            const isStealthOrSafe = (locData.l === null || locData.is === true);
 
             // --- REVISED LOGIC ---
-            // A strict priority order for LOCATION status: Geo Safe Zone > Stealth > Located.
-            // Immunity is a state that applies to a player within any of these categories.
             if (isInGeographicSafeZone) {
-                // Not immune, but in a geographic safe zone. Location is hidden.
-                // The `isImmune` flag from playerInfo is preserved.
                 safeZonePlayers.push(playerWithLastKnownCoords);
-            } else if (isStealth) {
-                // Not in a safe zone, and location is null (true stealth).
-                // The `isImmune` flag from playerInfo is preserved.
+            } else if (isStealthOrSafe) {
+                // Catches players who are stealthed (l: null) OR are flagged as safe (is: true)
                 stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
             } else if (hasCoords) {
-                // Player is not in a safe zone, not stealth, and has live coords.
-                // This is the correct category for a located player, immune or not.
+                // This will only be reached if hasCoords is true AND isStealthOrSafe is false.
                 locatedPlayers.push({
-                    ...playerInfo, // playerInfo already contains the correct `isImmune` status
+                    ...playerInfo,
                     lat, lng,
                     speed: parseFloat(locData.s || '0'),
                     batteryLevel: parseFloat(locData.bl || '0'),
@@ -582,7 +577,6 @@ async function runApiRequests() {
                     isSafeZone: false
                 });
             } else {
-                // Fallback for players that don't fit any other category (e.g., location enabled=false from the start)
                 notLocatedPlayers.push(playerInfo);
             }
         });
@@ -635,7 +629,6 @@ async function runApiRequests() {
         isFetching = false;
     }
 }
-
 
 // --- Connection and Server Start (Unchanged) ---
 io.on('connection', (socket) => {
@@ -711,6 +704,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
