@@ -534,6 +534,8 @@ async function runApiRequests() {
             
             // MODIFICATION: Explicitly check for immunity and get expiration time
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
+            const isInGeographicSafeZone = (richData.is_safe || locData.isz) && !isImmune;
+            const isStealth = (locData.l === null && locData.a === null) && !isInGeographicSafeZone;
 
             const playerInfo = {
                 u: locData.u,
@@ -549,12 +551,17 @@ async function runApiRequests() {
             const isInSafeZone = richData.is_safe || locData.isz; 
             const isStealth = (locData.l === null && locData.a === null) && !isInSafeZone;
 
-            if (isInSafeZone || isStealth) {
+            if (isInGeographicSafeZone) {
+                // This list now ONLY contains players in a geographic safe zone.
                 const lastKnown = playerLastKnownLocationMap.get(locData.u);
                 const playerWithCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-                if (isInSafeZone) safeZonePanelList.push({ ...playerWithCoords, isSafeZone: true });
-                else stealthedPlayers.push({ ...playerWithCoords, isSafeZone: false });
+                safeZonePanelList.push({ ...playerWithCoords, isSafeZone: true });
+            } else if (isStealth) {
+                const lastKnown = playerLastKnownLocationMap.get(locData.u);
+                const playerWithCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
+                stealthedPlayers.push({ ...playerWithCoords, isSafeZone: false });
             } else if (hasCoords) {
+                // Immune players with coordinates will now correctly end up here.
                 locatedPlayers.push({ ...playerInfo, lat, lng, speed: parseFloat(locData.s || '0'), batteryLevel: parseFloat(locData.bl || '0'), isCharging: locData.ic, updatedAt: locData.up, accuracy: parseFloat(locData.ac || '0'), isSafeZone: false });
             } else {
                 notLocatedPlayers.push({ ...playerInfo, reason: 'No location data available' });
@@ -701,5 +708,6 @@ async function startServer() {
 }
 
 startServer();
+
 
 
