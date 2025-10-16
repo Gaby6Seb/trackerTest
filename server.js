@@ -396,20 +396,29 @@ async function resolveReferenceLogin(loginDetails) {
     }
 }
 
-// --- Notification Processing Logic (Unchanged) ---
+// --- FIXED: Notification Processing Logic ---
 function processNotifications(fullData) {
     const newPlayerStatusMap = new Map();
     const allPlayersWithLocation = new Map();
-    [...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => {
-        if (p.lat && p.lng) allPlayersWithLocation.set(p.u, {
+
+    const allPlayersMap = new Map();
+    [...fullData.notLocated, ...fullData.located, ...fullData.safeZone, ...fullData.stealthed].forEach(p => allPlayersMap.set(p.u, p));
+
+    allPlayersMap.forEach((p, uid) => {
+        if (p.lat && p.lng) allPlayersWithLocation.set(uid, {
             lat: p.lat,
             lng: p.lng
         });
-        if (p.isSafeZone) newPlayerStatusMap.set(p.u, 'safeZone');
-        else if (fullData.stealthed.some(sp => sp.u === p.u)) newPlayerStatusMap.set(p.u, 'stealthed');
-        else newPlayerStatusMap.set(p.u, 'located');
+
+        let status = 'notLocated';
+        if (fullData.located.some(pl => pl.u === uid)) status = 'located';
+        if (fullData.safeZone.some(pl => pl.u === uid)) status = 'safeZone';
+        if (fullData.stealthed.some(pl => pl.u === uid && !pl.isImmune)) status = 'stealthed';
+        if (p.isImmune) status = 'immune';
+
+        newPlayerStatusMap.set(uid, status);
     });
-    fullData.notLocated.forEach(p => newPlayerStatusMap.set(p.u, 'notLocated'));
+
     io.sockets.sockets.forEach(socket => {
         const settings = socket.data.notificationSettings;
         if (!settings || !settings.enabled) return;
@@ -537,16 +546,18 @@ async function runApiRequests() {
         });
         const locatedPlayers = [];
         const notLocatedPlayers = [];
-        const stealthedPlayers = [];
-        const safeZonePanelList = [];
+        const stealthedOrImmunePlayers = [];
+        const safeZonePlayers = [];
         let mapWasUpdated = false;
 
         locationResponse.data.forEach(locData => {
             const richData = richDataMap.get(locData.u);
             if (!richData) return;
+
             const lat = parseFloat(locData.l);
             const lng = parseFloat(locData.lo);
             const hasCoords = !isNaN(lat) && !isNaN(lng);
+
             if (hasCoords) {
                 playerLastKnownLocationMap.set(locData.u, {
                     lat,
@@ -557,7 +568,8 @@ async function runApiRequests() {
             }
 
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
-            const isInGeographicSafeZone = (richData.is_safe || locData.isz) && !isImmune;
+            const isInGeographicSafeZone = richData.is_safe || locData.isz;
+            const isStealth = (locData.l === null && locData.a === null);
 
             const playerInfo = {
                 u: locData.u,
@@ -571,23 +583,7 @@ async function runApiRequests() {
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
 
-            if (isInGeographicSafeZone) {
-                const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                const playerWithCoords = lastKnown ? { ...playerInfo,
-                    ...lastKnown
-                } : playerInfo;
-                safeZonePanelList.push({ ...playerWithCoords,
-                    isSafeZone: true
-                });
-            } else if (locData.l === null && locData.a === null) {
-                const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                const playerWithCoords = lastKnown ? { ...playerInfo,
-                    ...lastKnown
-                } : playerInfo;
-                stealthedPlayers.push({ ...playerWithCoords,
-                    isSafeZone: false
-                });
-            } else if (hasCoords) {
+            if (hasCoords) {
                 locatedPlayers.push({ ...playerInfo,
                     lat,
                     lng,
@@ -596,9 +592,28 @@ async function runApiRequests() {
                     isCharging: locData.ic,
                     updatedAt: locData.up,
                     accuracy: parseFloat(locData.ac || '0'),
+                    isSafeZone: isInGeographicSafeZone
+                });
+            }
+
+            const lastKnown = playerLastKnownLocationMap.get(locData.u);
+            const playerWithLastKnownCoords = lastKnown ? { ...playerInfo,
+                ...lastKnown
+            } : playerInfo;
+
+            if (isImmune) {
+                stealthedOrImmunePlayers.push({ ...playerWithLastKnownCoords,
                     isSafeZone: false
                 });
-            } else {
+            } else if (isStealth && !isInGeographicSafeZone) {
+                stealthedOrImmunePlayers.push({ ...playerWithLastKnownCoords,
+                    isSafeZone: false
+                });
+            } else if (isInGeographicSafeZone) {
+                safeZonePlayers.push({ ...playerWithLastKnownCoords,
+                    isSafeZone: true
+                });
+            } else if (!hasCoords) {
                 notLocatedPlayers.push({ ...playerInfo,
                     reason: 'No location data available'
                 });
@@ -606,9 +621,9 @@ async function runApiRequests() {
         });
         if (mapWasUpdated) saveMapToFile();
 
-        // Handle Stealthed Players
-        const currentStealthedIds = new Set(stealthedPlayers.map(p => p.u));
-        for (const player of stealthedPlayers) {
+        const stealthedForTimerFetch = stealthedOrImmunePlayers.filter(p => !p.isImmune);
+        const currentStealthedIds = new Set(stealthedForTimerFetch.map(p => p.u));
+        for (const player of stealthedForTimerFetch) {
             const existingEntry = stealthExpirationMap.get(player.u);
             if (!existingEntry || (Date.now() - existingEntry.fetchedAt > STEALTH_REFETCH_INTERVAL_MS)) {
                 try {
@@ -634,16 +649,20 @@ async function runApiRequests() {
         for (const uid of stealthExpirationMap.keys()) {
             if (!currentStealthedIds.has(uid)) stealthExpirationMap.delete(uid);
         }
-        const stealthedPlayersWithTimers = stealthedPlayers.map(player => ({ ...player,
-            stealthExpiresAt: stealthExpirationMap.get(player.u)?.expiresAt || null
-        }));
+        const stealthedPlayersWithTimers = stealthedOrImmunePlayers.map(player => {
+            if (!player.isImmune) {
+                return { ...player,
+                    stealthExpiresAt: stealthExpirationMap.get(player.u)?.expiresAt || null
+                };
+            }
+            return player;
+        });
 
-        // Final Data & Broadcast
         lastSuccessfulData = {
             located: locatedPlayers,
             notLocated: notLocatedPlayers,
             stealthed: stealthedPlayersWithTimers,
-            safeZone: safeZonePanelList
+            safeZone: safeZonePlayers
         };
         io.sockets.sockets.forEach(socket => {
             if (socket.data.filterConfig) {
