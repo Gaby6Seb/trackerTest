@@ -475,7 +475,6 @@ function processNotifications(fullData) {
 }
 
 // --- FIXED: Core API Fetching Logic ---
-// --- FIXED: Core API Fetching Logic ---
 async function runApiRequests() {
     if (isFetching) return;
     try {
@@ -550,34 +549,36 @@ async function runApiRequests() {
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
 
-            const lastKnown = playerLastKnownLocationMap.get(locData.u);
-            const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
-
             const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
-            
-            // This now includes the API's real-time safety flag
-            const isStealthOrSafe = (locData.l === null || locData.is === true);
 
-            // --- REVISED LOGIC ---
-            if (isInGeographicSafeZone) {
-                safeZonePlayers.push(playerWithLastKnownCoords);
-            } else if (isStealthOrSafe) {
-                // Catches players who are stealthed (l: null) OR are flagged as safe (is: true)
-                stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
-            } else if (hasCoords) {
-                // This will only be reached if hasCoords is true AND isStealthOrSafe is false.
+            // --- FINAL REVISED LOGIC ---
+            // Simple and Direct: If we have coordinates, the player is ON THE MAP.
+            // If not, they are OFF THE MAP and go into a side panel.
+            if (hasCoords) {
+                // This player belongs on the map.
+                // All state flags (isImmune, etc.) are passed to the client for rendering.
                 locatedPlayers.push({
-                    ...playerInfo,
-                    lat, lng,
+                    ...playerInfo, // This already contains the correct isImmune status
+                    lat, 
+                    lng,
                     speed: parseFloat(locData.s || '0'),
                     batteryLevel: parseFloat(locData.bl || '0'),
                     isCharging: locData.ic,
                     updatedAt: locData.up,
                     accuracy: parseFloat(locData.ac || '0'),
-                    isSafeZone: false
+                    isSafeZone: isInGeographicSafeZone // Pass this to the client for potential styling
                 });
             } else {
-                notLocatedPlayers.push(playerInfo);
+                // This player is OFF the map. Now we decide why.
+                const lastKnown = playerLastKnownLocationMap.get(locData.u);
+                const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
+
+                if (isInGeographicSafeZone) {
+                    safeZonePlayers.push(playerWithLastKnownCoords);
+                } else {
+                    // This is the catch-all for anyone else off the map (stealth, initial load, etc.)
+                    stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
+                }
             }
         });
 
@@ -629,7 +630,6 @@ async function runApiRequests() {
         isFetching = false;
     }
 }
-
 // --- Connection and Server Start (Unchanged) ---
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}. Waiting for authentication.`);
@@ -704,6 +704,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
