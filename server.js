@@ -534,7 +534,7 @@ async function runApiRequests() {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
                 mapWasUpdated = true;
             }
-
+            console.log(richData.is_safe_expires_at)
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
             
             const playerInfo = {
@@ -548,7 +548,7 @@ async function runApiRequests() {
                 isImmune: isImmune,
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
-            console.log(playerInfo);
+            //console.log(playerInfo);
 
             const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
 
@@ -705,6 +705,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
