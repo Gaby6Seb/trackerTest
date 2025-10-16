@@ -396,7 +396,7 @@ async function resolveReferenceLogin(loginDetails) {
     }
 }
 
-// --- FIXED: Notification Processing Logic ---
+// --- Notification Processing Logic (Unchanged) ---
 function processNotifications(fullData) {
     const newPlayerStatusMap = new Map();
     const allPlayersWithLocation = new Map();
@@ -583,8 +583,26 @@ async function runApiRequests() {
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
 
-            if (hasCoords) {
-                locatedPlayers.push({ ...playerInfo,
+            const lastKnown = playerLastKnownLocationMap.get(locData.u);
+            const playerWithCoords = lastKnown ? { ...playerInfo,
+                ...lastKnown
+            } : playerInfo;
+
+            if (isImmune) {
+                stealthedOrImmunePlayers.push({ ...playerWithCoords,
+                    isSafeZone: false
+                });
+            } else if (isInGeographicSafeZone) {
+                safeZonePlayers.push({ ...playerWithCoords,
+                    isSafeZone: true
+                });
+            } else if (isStealth) {
+                stealthedOrImmunePlayers.push({ ...playerWithCoords,
+                    isSafeZone: false
+                });
+            } else if (hasCoords) {
+                locatedPlayers.push({
+                    ...playerInfo,
                     lat,
                     lng,
                     speed: parseFloat(locData.s || '0'),
@@ -592,33 +610,15 @@ async function runApiRequests() {
                     isCharging: locData.ic,
                     updatedAt: locData.up,
                     accuracy: parseFloat(locData.ac || '0'),
-                    isSafeZone: isInGeographicSafeZone
-                });
-            }
-
-            const lastKnown = playerLastKnownLocationMap.get(locData.u);
-            const playerWithLastKnownCoords = lastKnown ? { ...playerInfo,
-                ...lastKnown
-            } : playerInfo;
-
-            if (isImmune) {
-                stealthedOrImmunePlayers.push({ ...playerWithLastKnownCoords,
                     isSafeZone: false
                 });
-            } else if (isStealth && !isInGeographicSafeZone) {
-                stealthedOrImmunePlayers.push({ ...playerWithLastKnownCoords,
-                    isSafeZone: false
-                });
-            } else if (isInGeographicSafeZone) {
-                safeZonePlayers.push({ ...playerWithLastKnownCoords,
-                    isSafeZone: true
-                });
-            } else if (!hasCoords) {
+            } else {
                 notLocatedPlayers.push({ ...playerInfo,
                     reason: 'No location data available'
                 });
             }
         });
+
         if (mapWasUpdated) saveMapToFile();
 
         const stealthedForTimerFetch = stealthedOrImmunePlayers.filter(p => !p.isImmune);
