@@ -475,7 +475,6 @@ function processNotifications(fullData) {
 }
 
 // --- FIXED: Core API Fetching Logic ---
-// --- FIXED: Core API Fetching Logic ---
 async function runApiRequests() {
     if (isFetching) return;
     try {
@@ -523,9 +522,9 @@ async function runApiRequests() {
         const safeZonePlayers = [];
         let mapWasUpdated = false;
 
-        for (const locData of locationResponse.data) {
+        locationResponse.data.forEach(locData => {
             const richData = richDataMap.get(locData.u);
-            if (!richData) continue;
+            if (!richData) return;
 
             const lat = parseFloat(locData.l);
             const lng = parseFloat(locData.lo);
@@ -536,11 +535,9 @@ async function runApiRequests() {
                 mapWasUpdated = true;
             }
 
-            // --- DEFINITIVE REFACTOR ---
+            // Determine immunity status first, as it's a state, not a location category.
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
-            const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
-            const isStealth = (locData.l === null);
-
+            
             const playerInfo = {
                 u: locData.u,
                 firstName: richData.first_name || 'Player',
@@ -549,49 +546,33 @@ async function runApiRequests() {
                 teamColor: richData.team_color || '#3388ff',
                 avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null,
                 teamId: richData.team_id,
-                isImmune: isImmune,
+                isImmune: isImmune, // Carry the immunity flag into every object
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
 
-            // Priority 1: IMMUNITY. This is the highest priority. No other condition matters if a player is immune.
-            if (isImmune) {
-                const immunePlayer = { ...playerInfo };
-                if (hasCoords) {
-                    immunePlayer.lat = lat;
-                    immunePlayer.lng = lng;
-                    immunePlayer.updatedAt = locData.up;
-                } else {
-                    const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                    if (lastKnown) {
-                        immunePlayer.lat = lastKnown.lat;
-                        immunePlayer.lng = lastKnown.lng;
-                        immunePlayer.updatedAt = lastKnown.updatedAt;
-                    }
-                }
-                stealthedOrImmunePlayers.push(immunePlayer);
-                continue; // Player is categorized. Move to the next one.
-            }
+            const lastKnown = playerLastKnownLocationMap.get(locData.u);
+            const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
 
-            // Priority 2: GEOGRAPHIC SAFE ZONE
+            // Define location statuses
+            const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
+            const isStealth = (locData.l === null);
+
+            // --- REVISED LOGIC ---
+            // A strict priority order for LOCATION status: Geo Safe Zone > Stealth > Located.
+            // Immunity is a state that applies to a player within any of these categories.
             if (isInGeographicSafeZone) {
-                const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
+                // Not immune, but in a geographic safe zone. Location is hidden.
+                // The `isImmune` flag from playerInfo is preserved.
                 safeZonePlayers.push(playerWithLastKnownCoords);
-                continue;
-            }
-
-            // Priority 3: STEALTH
-            if (isStealth) {
-                const lastKnown = playerLastKnownLocationMap.get(locData.u);
-                const playerWithLastKnownCoords = lastKnown ? { ...playerInfo, ...lastKnown } : playerInfo;
+            } else if (isStealth) {
+                // Not in a safe zone, and location is null (true stealth).
+                // The `isImmune` flag from playerInfo is preserved.
                 stealthedOrImmunePlayers.push(playerWithLastKnownCoords);
-                continue;
-            }
-
-            // Priority 4: LOCATED (Normal Player)
-            if (hasCoords) {
+            } else if (hasCoords) {
+                // Player is not in a safe zone, not stealth, and has live coords.
+                // This is the correct category for a located player, immune or not.
                 locatedPlayers.push({
-                    ...playerInfo,
+                    ...playerInfo, // playerInfo already contains the correct `isImmune` status
                     lat, lng,
                     speed: parseFloat(locData.s || '0'),
                     batteryLevel: parseFloat(locData.bl || '0'),
@@ -600,13 +581,11 @@ async function runApiRequests() {
                     accuracy: parseFloat(locData.ac || '0'),
                     isSafeZone: false
                 });
-                continue;
+            } else {
+                // Fallback for players that don't fit any other category (e.g., location enabled=false from the start)
+                notLocatedPlayers.push(playerInfo);
             }
-
-            // Fallback: NOT LOCATED
-            notLocatedPlayers.push(playerInfo);
-        }
-
+        });
 
         if (mapWasUpdated) saveMapToFile();
         
@@ -649,7 +628,7 @@ async function runApiRequests() {
             }
         });
         processNotifications(lastSuccessfulData);
-        console.log(`Broadcasted to ${io.engine.clientsCount} clients. L:${locatedPlayers.length} S/I:${stealthedOrImmunePlayers.length} SZ:${safeZonePlayers.length} NL:${notLocatedPlayers.length}`);
+        console.log(`Broadcasted to ${io.engine.clientsCount} clients.`);
     } catch (error) {
         console.error("API Error:", error.message);
     } finally {
@@ -732,5 +711,6 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
