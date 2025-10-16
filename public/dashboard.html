@@ -31,9 +31,7 @@
     </div>
   </div>
   <div id="map"></div>
-  <!-- REPLACEMENT HTML for controls-container -->
   <div id="controls-container">
-    <!-- This new wrapper is for the mobile layout -->
     <div id="mobile-panel-header">
         <div id="panel-grabber"></div>
         <div id="search-container">
@@ -47,8 +45,6 @@
             </label>
         </div>
     </div>
-
-    <!-- The rest of the controls are now grouped here -->
     <div id="collapsible-controls-area">
         <div id="filter-toggles">
             <label for="show-all-toggle">
@@ -84,27 +80,22 @@
   <div id="notification-modal-overlay" class="modal-overlay" style="display: none;">
     <div id="notification-modal" class="modal-content">
         <button id="modal-close-btn" class="modal-close-btn">&times;</button>
-        
         <div id="player-selection-step">
             <h2>Who are you?</h2>
             <p>Select your name from the list to enable notifications.</p>
             <ul id="teammate-list"></ul>
         </div>
-        
         <div id="notification-settings-step" style="display: none;">
             <h2>Notification Settings for <span id="my-player-name"></span></h2>
             <p><a href="#" id="change-player-link">Not you? Change player.</a></p>
-            
             <div class="setting-row master-toggle">
                 <label>Manage Subscription</label>
                 <div class='onesignal-customlink-container'></div>
             </div>
-
             <div class="setting-row master-toggle">
                 <label for="enable-notifications">Enable Alert Preferences</label>
                 <input type="checkbox" id="enable-notifications" class="toggle-switch">
             </div>
-
             <fieldset id="notification-fieldset">
                 <div class="setting-row">
                     <label for="proximity-radius">Proximity Alert Radius (miles)</label>
@@ -113,7 +104,6 @@
                         <span id="proximity-value">Off</span>
                     </div>
                 </div>
-
                 <div class="setting-row">
                     <label for="ghost-radius">"Ghost" Alert Radius (miles)</label>
                     <div class="range-container">
@@ -125,7 +115,6 @@
                     </label>
                 </div>
             </fieldset>
-            
             <button id="save-settings-btn">Save Alert Preferences</button>
             <button id="test-notification-btn" style="margin-top: 10px;">Send Test Notification</button>
         </div>
@@ -133,83 +122,18 @@
   </div>
 
 <script>
-// --- OneSignal Initialization ---
-async function initializeOneSignal() {
-    if (!window.OneSignal) {
-        console.error("OneSignal SDK not loaded.");
-        document.getElementById('notification-btn').style.display = 'none';
-        return;
-    }
-    try {
-        await OneSignal.init({
-            appId: "95e17686-f5df-4181-a59a-f89457df2973",
-            allowLocalhostAsSecureOrigin: true,
-            serviceWorkerPath: '/OneSignalSDKWorker.js',
-        });
-        console.log("OneSignal SDK initialized successfully.");
-        if (!OneSignal.Notifications.isPushSupported()) {
-            console.warn("Push notifications are not supported by this browser.");
-            document.getElementById('notification-btn').style.display = 'none';
-            return;
-        }
-        console.log("Push notifications are supported.");
-        const updateSubscriptionUI = () => {
-            if (document.getElementById('notification-modal-overlay').style.display === 'flex') {
-                checkSubscriptionStatus();
-            }
-        };
-        OneSignal.User.PushSubscription.addEventListener('change', updateSubscriptionUI);
-        OneSignal.Notifications.addEventListener('permissionChange', updateSubscriptionUI);
-        await checkSubscriptionStatus();
-    } catch (error) {
-        console.error("OneSignal SDK initialization failed:", error);
-        document.getElementById('notification-btn').style.display = 'none';
-    }
-}
+// --- OneSignal Initialization (Unchanged) ---
+async function initializeOneSignal() { if (!window.OneSignal) { console.error("OneSignal SDK not loaded."); document.getElementById('notification-btn').style.display = 'none'; return; } try { await OneSignal.init({ appId: "95e17686-f5df-4181-a59a-f89457df2973", allowLocalhostAsSecureOrigin: true, serviceWorkerPath: '/OneSignalSDKWorker.js', }); console.log("OneSignal SDK initialized successfully."); if (!OneSignal.Notifications.isPushSupported()) { console.warn("Push notifications are not supported by this browser."); document.getElementById('notification-btn').style.display = 'none'; return; } console.log("Push notifications are supported."); const updateSubscriptionUI = () => { if (document.getElementById('notification-modal-overlay').style.display === 'flex') { checkSubscriptionStatus(); } }; OneSignal.User.PushSubscription.addEventListener('change', updateSubscriptionUI); OneSignal.Notifications.addEventListener('permissionChange', updateSubscriptionUI); await checkSubscriptionStatus(); } catch (error) { console.error("OneSignal SDK initialization failed:", error); document.getElementById('notification-btn').style.display = 'none'; } }
 window.OneSignalDeferred = window.OneSignalDeferred || [];
 window.OneSignalDeferred.push(initializeOneSignal);
 
-// --- Login Authentication Guard ---
-const username = localStorage.getItem('username');
-const isMaster = localStorage.getItem('isMaster') === 'true';
-const displayName = localStorage.getItem('displayName');
-const canSeeAllPlayers = localStorage.getItem('canSeeAllPlayers') === 'true';
-const canUseNotifications = localStorage.getItem('canUseNotifications') === 'true';
-if (!username) {
-    window.location.href = '/';
-}
-document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('display-name').textContent = displayName || username;
-    if (isMaster || canSeeAllPlayers) {
-        document.getElementById('filter-toggles').style.display = 'flex';
-    } else {
-        document.getElementById('filter-toggles').style.display = 'none';
-    }
-    // Logic to show notification bell
-    if (canUseNotifications) {
-        // We might need to wait for OneSignal to init to check for push support
-        // So this check is also done inside initializeOneSignal
-        document.getElementById('notification-btn').style.display = 'block';
-    }
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-        const token = localStorage.getItem('authToken');
-        if (token) {
-            try {
-                await fetch('/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-            } catch (err) { console.error("Failed to notify server of logout:", err); }
-        }
-        if (window.OneSignal) await window.OneSignal.logout();
-        localStorage.clear();
-        socket.disconnect();
-        window.location.href = '/';
-    });
-});
+// --- Login Authentication Guard (Unchanged) ---
+const username = localStorage.getItem('username'); const isMaster = localStorage.getItem('isMaster') === 'true'; const displayName = localStorage.getItem('displayName'); const canSeeAllPlayers = localStorage.getItem('canSeeAllPlayers') === 'true'; const canUseNotifications = localStorage.getItem('canUseNotifications') === 'true'; if (!username) { window.location.href = '/'; }
+document.addEventListener('DOMContentLoaded', () => { document.getElementById('display-name').textContent = displayName || username; if (isMaster || canSeeAllPlayers) { document.getElementById('filter-toggles').style.display = 'flex'; } else { document.getElementById('filter-toggles').style.display = 'none'; } if (canUseNotifications) { document.getElementById('notification-btn').style.display = 'block'; } document.getElementById('logout-btn').addEventListener('click', async () => { const token = localStorage.getItem('authToken'); if (token) { try { await fetch('/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }); } catch (err) { console.error("Failed to notify server of logout:", err); } } if (window.OneSignal) await window.OneSignal.logout(); localStorage.clear(); socket.disconnect(); window.location.href = '/'; }); });
 
 // --- Map & Socket Logic ---
 const map = L.map('map').setView([33.04, -97.02], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
 const markers = L.markerClusterGroup({ maxClusterRadius: 60, disableClusteringAtZoom: 14, chunkedLoading: true, spiderfyOnMaxZoom: true });
 map.addLayer(markers);
 const socket = io();
@@ -220,222 +144,49 @@ let showAllPlayers = false;
 let initialMapLoad = true;
 let timerUpdateInterval = null;
 
-const findMeBtn = document.getElementById('find-me-btn');
-const followMeLabel = document.getElementById('follow-me-label');
-const followMeToggle = document.getElementById('follow-me-toggle');
-  
-let myLocationMarker = null;
-let locationAccuracyCircle = null;
-let proximityAlertCircle = null;
-let locationWatchId = null; // To store the ID of the location watcher
-let isFollowing = false; // New state variable
+// --- Location Tracking Logic (Unchanged) ---
+const findMeBtn = document.getElementById('find-me-btn'); const followMeLabel = document.getElementById('follow-me-label'); const followMeToggle = document.getElementById('follow-me-toggle'); let myLocationMarker = null; let locationAccuracyCircle = null; let proximityAlertCircle = null; let locationWatchId = null; let isFollowing = false;
+function onLocationFound(e) { const radius = e.accuracy; const latlng = e.latlng; const myLocationIcon = L.divIcon({ className: 'my-location-marker', iconSize: [18, 18] }); if (!myLocationMarker) { myLocationMarker = L.marker(latlng, { icon: myLocationIcon }).addTo(map); locationAccuracyCircle = L.circle(latlng, radius).addTo(map); map.setView(latlng, 16); } else { myLocationMarker.setLatLng(latlng); locationAccuracyCircle.setLatLng(latlng).setRadius(radius); } if (isFollowing) { map.setView(latlng); } updateProximityCircle(); }
+function onLocationError(e) { alert(e.message); stopLocationTracking(); }
+function updateProximityCircle() { const proximityMiles = parseFloat(document.getElementById('proximity-radius').value); const isTracking = locationWatchId !== null; if (isTracking && proximityMiles > 0 && myLocationMarker) { const centerLatLng = myLocationMarker.getLatLng(); const radiusMeters = proximityMiles * 1609.34; if (!proximityAlertCircle) { proximityAlertCircle = L.circle(centerLatLng, { radius: radiusMeters, color: '#3498db', fillColor: '#3498db', fillOpacity: 0.15, weight: 2 }).addTo(map); } else { proximityAlertCircle.setLatLng(centerLatLng); proximityAlertCircle.setRadius(radiusMeters); } } else { if (proximityAlertCircle) { map.removeLayer(proximityAlertCircle); proximityAlertCircle = null; } } }
+function startLocationTracking() { if (!navigator.geolocation) { return alert('Geolocation is not supported by your browser.'); } locationWatchId = navigator.geolocation.watchPosition((position) => { const leafletEvent = { latlng: L.latLng(position.coords.latitude, position.coords.longitude), accuracy: position.coords.accuracy }; onLocationFound(leafletEvent); socket.emit('live_location_update', { lat: position.coords.latitude, lng: position.coords.longitude }); }, (error) => { let message = 'Could not get your location.'; switch (error.code) { case error.PERMISSION_DENIED: message = "Location access denied. Please enable it in your browser settings."; break; case error.POSITION_UNAVAILABLE: message = "Location information is unavailable."; break; case error.TIMEOUT: message = "The request to get user location timed out."; break; } onLocationError({ message }); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }); findMeBtn.textContent = '⏹️ Stop Tracking'; findMeBtn.classList.add('tracking'); followMeLabel.style.display = 'inline-block'; }
+function stopLocationTracking() { if (locationWatchId !== null) { navigator.geolocation.clearWatch(locationWatchId); locationWatchId = null; socket.emit('stop_live_location'); } if (myLocationMarker) { map.removeLayer(myLocationMarker); myLocationMarker = null; } if (locationAccuracyCircle) { map.removeLayer(locationAccuracyCircle); locationAccuracyCircle = null; } if (proximityAlertCircle) { map.removeLayer(proximityAlertCircle); proximityAlertCircle = null; } findMeBtn.textContent = '📍 Find Me'; findMeBtn.classList.remove('tracking'); followMeLabel.style.display = 'none'; followMeToggle.checked = false; isFollowing = false; }
+findMeBtn.addEventListener('click', () => { if (locationWatchId === null) { startLocationTracking(); } else { stopLocationTracking(); } });
+followMeToggle.addEventListener('change', () => { isFollowing = followMeToggle.checked; if (isFollowing && myLocationMarker) { map.setView(myLocationMarker.getLatLng(), 16); } });
 
-// Function to handle successful location fetching
-// Replace the existing onLocationFound function
-function onLocationFound(e) {
-    const radius = e.accuracy;
-    const latlng = e.latlng;
-
-    const myLocationIcon = L.divIcon({
-        className: 'my-location-marker',
-        iconSize: [18, 18]
-    });
-
-    if (!myLocationMarker) {
-        myLocationMarker = L.marker(latlng, { icon: myLocationIcon }).addTo(map);
-        locationAccuracyCircle = L.circle(latlng, radius).addTo(map);
-        // Pan to the location on the first find
-        map.setView(latlng, 16);
-    } else {
-        myLocationMarker.setLatLng(latlng);
-        locationAccuracyCircle.setLatLng(latlng).setRadius(radius);
-    }
-
-    // NEW: If "Follow Me" is checked, keep the map centered
-    if (isFollowing) {
-        map.setView(latlng);
-    }
-
-  updateProximityCircle();
-}
-
-// Function to handle errors (e.g., user denies permission)
-function onLocationError(e) {
-    alert(e.message);
-    // Stop tracking if an error occurs
-    stopLocationTracking();
-}
-
-function updateProximityCircle() {
-    const proximityMiles = parseFloat(document.getElementById('proximity-radius').value);
-    const isTracking = locationWatchId !== null;
-
-    // We only show the circle if tracking is active and a radius is set
-    if (isTracking && proximityMiles > 0 && myLocationMarker) {
-        const centerLatLng = myLocationMarker.getLatLng();
-        const radiusMeters = proximityMiles * 1609.34; // Convert miles to meters
-
-        if (!proximityAlertCircle) {
-            // If the circle doesn't exist, create it
-            proximityAlertCircle = L.circle(centerLatLng, {
-                radius: radiusMeters,
-                color: '#3498db',      // A nice blue color
-                fillColor: '#3498db',
-                fillOpacity: 0.15,
-                weight: 2             // Border weight
-            }).addTo(map);
-        } else {
-            // Otherwise, just update its position and radius
-            proximityAlertCircle.setLatLng(centerLatLng);
-            proximityAlertCircle.setRadius(radiusMeters);
-        }
-    } else {
-        // If conditions aren't met (tracking off or radius is 0), remove the circle
-        if (proximityAlertCircle) {
-            map.removeLayer(proximityAlertCircle);
-            proximityAlertCircle = null;
-        }
-    }
-}
-
-// Function to start tracking
-function startLocationTracking() {
-    if (!navigator.geolocation) {
-        return alert('Geolocation is not supported by your browser.');
-    }
-    
-    // Start watching the user's position
-    locationWatchId = navigator.geolocation.watchPosition(
-        (position) => {
-            const leafletEvent = {
-                latlng: L.latLng(position.coords.latitude, position.coords.longitude),
-                accuracy: position.coords.accuracy
-            };
-            onLocationFound(leafletEvent);
-          socket.emit('live_location_update', { 
-                lat: position.coords.latitude, 
-                lng: position.coords.longitude 
-            });
-        },
-        (error) => {
-            let message = 'Could not get your location.';
-            switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    message = "Location access denied. Please enable it in your browser settings.";
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    message = "Location information is unavailable.";
-                    break;
-                case error.TIMEOUT:
-                    message = "The request to get user location timed out.";
-                    break;
-            }
-            onLocationError({ message });
-        },
-        {
-            enableHighAccuracy: true, // Request the most accurate position possible
-            timeout: 10000,           // 10 second timeout
-            maximumAge: 0             // Don't use a cached position
-        }
-    );
-
-    // Update the button UI
-    findMeBtn.textContent = '⏹️ Stop Tracking';
-    findMeBtn.classList.add('tracking');
-  followMeLabel.style.display = 'inline-block'; // Show the checkbox
-}
-
-// Function to stop tracking
-function stopLocationTracking() {
-    if (locationWatchId !== null) {
-        navigator.geolocation.clearWatch(locationWatchId);
-        locationWatchId = null;
-      socket.emit('stop_live_location');
-    }
-
-    if (myLocationMarker) {
-        map.removeLayer(myLocationMarker);
-        myLocationMarker = null;
-    }
-    if (locationAccuracyCircle) {
-        map.removeLayer(locationAccuracyCircle);
-        locationAccuracyCircle = null;
-    }
-
-  if (proximityAlertCircle) {
-        map.removeLayer(proximityAlertCircle);
-        proximityAlertCircle = null;
-    }
-
-    findMeBtn.textContent = '📍 Find Me';
-    findMeBtn.classList.remove('tracking');
-    followMeLabel.style.display = 'none'; // Hide the checkbox
-    followMeToggle.checked = false; // Uncheck it
-    isFollowing = false; // Reset the state
-}
-
-// Main event listener for the button
-findMeBtn.addEventListener('click', () => {
-    if (locationWatchId === null) {
-        // If not tracking, start
-        startLocationTracking();
-    } else {
-        // If already tracking, stop
-        stopLocationTracking();
-    }
-});
-  followMeToggle.addEventListener('change', () => {
-    isFollowing = followMeToggle.checked;
-    // If user just enabled following, pan to their location immediately
-    if (isFollowing && myLocationMarker) {
-        map.setView(myLocationMarker.getLatLng(), 16);
-    }
-});
-
-// --- FIXED createAvatarIcon FUNCTION ---
+// --- FIXED: createAvatarIcon FUNCTION ---
 const createAvatarIcon = (color, avatarUrl, role, isSafeZone, isLastKnown, isStealthed, isImmune) => {
     const baseClass = avatarUrl ? 'marker-pin-avatar' : 'marker-pin';
     const safeZoneClass = isSafeZone ? 'safezone-marker' : '';
     const stealthedClass = isStealthed ? 'stealthed-marker' : '';
-    // KEY FIX: Do NOT apply the grayscale 'last-known-marker' class if the player is immune.
-    const lastKnownClass = (isLastKnown && !isImmune) ? 'last-known-marker' : '';
+    const lastKnownClass = (isLastKnown && !isImmune) ? 'last-known-marker' : ''; // Prevent grayscale if immune
     const avatarImage = avatarUrl ? `<img src="${avatarUrl}" class="marker-avatar-image" alt="player avatar"/>` : '';
     let pinStyles = `background-color: ${color || '#3388ff'};`;
-    if (!avatarUrl) {
-        pinStyles += `border-color: ${color || '#3388ff'};`;
-    }
+    if (!avatarUrl) { pinStyles += `border-color: ${color || '#3388ff'};`; }
     const pulseHtml = !isLastKnown ? `<div class="marker-pulse-effect ${role}-pulse"></div>` : '';
-    // KEY ADDITION: Add a shield icon if the player is immune.
-    const shieldHtml = isImmune ? '<div class="marker-shield">🛡️</div>' : '';
-
-    const markerHtml = `
-        <div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}">
-            <div class="${baseClass}" style="${pinStyles}">
-                ${avatarImage}
-                ${shieldHtml}
-            </div>
-            ${pulseHtml}
-        </div>
-    `;
+    const shieldHtml = isImmune ? '<div class="marker-shield">🛡️</div>' : ''; // Add shield icon
+    const markerHtml = `<div class="marker-container ${role}-marker ${safeZoneClass} ${stealthedClass} ${lastKnownClass}"><div class="${baseClass}" style="${pinStyles}">${avatarImage}${shieldHtml}</div>${pulseHtml}</div>`;
     const iconSize = avatarUrl ? [40, 52] : [30, 42];
     const iconAnchor = avatarUrl ? [20, 52] : [15, 42];
     return L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize, iconAnchor });
 };
 
+// --- FIXED: locationUpdate Handler ---
 socket.on('locationUpdate', (data) => {
     document.querySelector('.subtitle').textContent = 'Live';
-    // This part is now correct because the server sends immune players in the 'located' array
     allPlayersWithLocation = [
         ...data.located.map(p => ({ ...p, statusType: 'located' })),
         ...data.safeZone.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'safeZone' })),
         ...data.stealthed.filter(p => p.lat && p.lng).map(p => ({ ...p, statusType: 'stealthed' })),
     ];
     allPanelData = data;
+
     const listMapping = [
         { containerId: 'safezone-container', listId: 'safezone-list', data: data.safeZone },
         { containerId: 'stealth-container', listId: 'stealth-list', data: data.stealthed },
         { containerId: 'not-located-container', listId: 'not-located-list', data: data.notLocated, reasonKey: 'reason' }
     ];
+
     listMapping.forEach(({ containerId, listId, data: players, reasonKey }) => {
         const container = document.getElementById(containerId);
         const list = document.getElementById(listId);
@@ -450,17 +201,12 @@ socket.on('locationUpdate', (data) => {
                     listItem.classList.add('clickable-list-item');
                     listItem.onclick = () => panToLastLocation(player.lat, player.lng);
                 }
-                
-                // --- MODIFIED: Handle immunity label and timers ---
                 let timerHtml = '';
                 const immunityLabel = player.isImmune ? ' (Immune)' : '';
-                // Use whichever expiration date is available (immunity takes precedence)
                 const expiresAt = player.immunityExpiresAt || player.stealthExpiresAt;
                 if (expiresAt) {
-                    // Use a generic class for the timer updater to find
                     timerHtml = `<span class="status-timer" data-expires-at="${expiresAt}"></span>`;
                 }
-
                 listItem.innerHTML = `<span style="color:${player.teamColor || '#999999'}; font-weight: bold;">${player.firstName} ${player.lastName || ''}</span> (${player.teamName || 'N/A'})${details}${immunityLabel}${timerHtml}`;
                 list.appendChild(listItem);
             });
@@ -468,14 +214,16 @@ socket.on('locationUpdate', (data) => {
             container.style.display = 'none';
         }
     });
+
     startTimerUpdates();
     filterMarkers(document.getElementById('player-search').value, initialMapLoad);
     if (initialMapLoad) initialMapLoad = false;
 });
 
-
-// --- The rest of the file is unchanged, but included for completeness. ---
+// --- FIXED: startTimerUpdates Function ---
 function startTimerUpdates() { if (timerUpdateInterval) clearInterval(timerUpdateInterval); timerUpdateInterval = setInterval(() => { document.querySelectorAll('.status-timer').forEach(el => { const expiresAt = el.dataset.expiresAt; if (!expiresAt) { el.textContent = ''; return; } const remainingMs = new Date(expiresAt) - new Date(); if (remainingMs <= 0) { el.textContent = ' (Expired)'; } else { const totalSeconds = Math.floor(remainingMs / 1000); const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; el.textContent = ` (${minutes}:${seconds.toString().padStart(2, '0')} left)`; } }); }, 1000); }
+
+// --- Other Socket Event Handlers & Helper Functions (Unchanged) ---
 socket.on('connect', () => { console.log('Socket ID:', socket.id); document.querySelector('.subtitle').textContent = 'Authenticating...'; socket.emit('authenticate', { username }); });
 socket.on('auth_error', (message) => { alert(`Authentication Error: ${message}`); localStorage.clear(); window.location.href = '/'; });
 socket.on('auth_success', (data) => { if (data.teammates) { setupNotificationModal(data.teammates); } });
@@ -484,94 +232,22 @@ socket.on('ghost_alert', (data) => { console.log('Ghost Alert:', data); alert(`G
 function panToLastLocation(lat, lng) { map.setView([lat, lng], 17); }
 function expandPanel(containerId) { const container = document.getElementById(containerId); if (container && container.classList.contains('minimized')) { container.classList.remove('minimized'); const icon = container.querySelector('h2 span'); if (icon) icon.textContent = '-'; } }
 function findAndExpandList(searchTerm) { const lowerCaseSearchTerm = searchTerm.toLowerCase(); document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted')); const listsToSearch = [ { data: allPanelData.safeZone, containerId: 'safezone-container' }, { data: allPanelData.stealthed, containerId: 'stealth-container' }, { data: allPanelData.notLocated, containerId: 'not-located-container' } ]; for (const listInfo of listsToSearch) { if (listInfo.data) { const foundPlayer = listInfo.data.find(p => (`${p.firstName || ''} ${p.lastName || ''}`.toLowerCase().includes(lowerCaseSearchTerm)) || ((p.teamName || '').toLowerCase().includes(lowerCaseSearchTerm)) ); if (foundPlayer) { expandPanel(listInfo.containerId); const listItem = document.querySelector(`li[data-uid="${foundPlayer.u}"]`); if(listItem) { listItem.classList.add('highlighted'); listItem.scrollIntoView({ behavior: 'smooth', block: 'center' }); } return; } } } }
-const searchInput = document.getElementById('player-search'); const clearSearchBtn = document.getElementById('clear-search-btn'); searchInput.addEventListener('input', (e) => { clearSearchBtn.style.display = e.target.value.length > 0 ? 'block' : 'none'; filterMarkers(e.target.value, true); }); clearSearchBtn.addEventListener('click', () => { searchInput.value = ''; clearSearchBtn.style.display = 'none'; filterMarkers('', true); searchInput.focus(); }); document.getElementById('show-all-toggle').addEventListener('change', (e) => { showAllPlayers = e.target.checked; filterMarkers(searchInput.value, true); }); 
+const searchInput = document.getElementById('player-search'); const clearSearchBtn = document.getElementById('clear-search-btn'); searchInput.addEventListener('input', (e) => { clearSearchBtn.style.display = e.target.value.length > 0 ? 'block' : 'none'; filterMarkers(e.target.value, true); }); clearSearchBtn.addEventListener('click', () => { searchInput.value = ''; clearSearchBtn.style.display = 'none'; filterMarkers('', true); searchInput.focus(); }); document.getElementById('show-all-toggle').addEventListener('change', (e) => { showAllPlayers = e.target.checked; filterMarkers(searchInput.value, true); });
+function getDirections(buttonElement) { const destLat = buttonElement.dataset.lat; const destLng = buttonElement.dataset.lng; let url; if (myLocationMarker) { const myCoords = myLocationMarker.getLatLng(); url = `https://maps.google.com/?saddr=${myCoords.lat},${myCoords.lng}&daddr=${destLat},${destLng}`; } else { url = `https://maps.google.com/?daddr=${destLat},${destLng}`; } window.open(url, '_blank'); }
 
-function getDirections(buttonElement) {
-    const destLat = buttonElement.dataset.lat;
-    const destLng = buttonElement.dataset.lng;
-    let url;
+// --- FIXED: filterMarkers Function ---
+function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayers(); const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean); const foundPlayerCoords = []; const updatedUids = new Set(); allPlayersWithLocation.forEach(user => { const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType, isImmune } = user; const isNeutral = role !== 'teammate' && role !== 'target'; const shouldDisplay = showAllPlayers || !isNeutral; if (!shouldDisplay) return; const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase(); const fullTeamName = (teamName || '').toLowerCase(); const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term)); if (isMatch) { updatedUids.add(u); foundPlayerCoords.push(L.latLng(lat, lng)); let popupContent; const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed'; if (isLastKnown && !isImmune) { popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } else { const batteryIcon = isCharging ? '⚡' : '🔋'; const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`; let roleLabel = ''; if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>'; else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>'; const immunityStatus = isImmune ? '<strong>Status:</strong> <span style="color: #3498db;">Immune</span><br>' : ''; popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body">${immunityStatus}<strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } const isStealthed = statusType === 'stealthed'; const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed, isImmune); if (currentMarkers[u]) { currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent); } else { currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent); } markers.addLayer(currentMarkers[u]); } }); const currentlyTracked = markers.getLayers().length; const subtitleEl = document.querySelector('.subtitle'); if (subtitleEl.textContent !== 'Connecting...' && subtitleEl.textContent !== 'Authenticating...') { subtitleEl.textContent = `Tracking ${currentlyTracked} players on map.`; } if (markers.getLayers().length === 0 && searchTerms.length > 0) { findAndExpandList(searchTerms[0]); } else { document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted')); } if (shouldFitBounds) { if (searchTerms.length > 0 && foundPlayerCoords.length > 0) { if (foundPlayerCoords.length > 1) { map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 }); } else { map.setView(foundPlayerCoords[0], 16); if (updatedUids.size === 1) { const singleMarker = currentMarkers[updatedUids.values().next().value]; if (singleMarker) singleMarker.openPopup(); } } } else { const allVisibleCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng)); if (allVisibleCoords.length > 0) { map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] }); } } } for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; } }
 
-    // Check if we have the user's current location from the "Find Me" feature
-    if (myLocationMarker) {
-        const myCoords = myLocationMarker.getLatLng();
-        // Create a URL with a start address (saddr) and destination address (daddr)
-        url = `https://maps.google.com/?saddr=${myCoords.lat},${myCoords.lng}&daddr=${destLat},${destLng}`;
-    } else {
-        // Fallback to the old behavior if the user's location isn't active
-        url = `https://maps.google.com/?daddr=${destLat},${destLng}`;
-    }
-    
-    window.open(url, '_blank');
-}
-function filterMarkers(searchTerm, shouldFitBounds = false) { markers.clearLayers(); const searchTerms = searchTerm.toLowerCase().split(',').map(t => t.trim()).filter(Boolean); const foundPlayerCoords = []; const updatedUids = new Set(); allPlayersWithLocation.forEach(user => { const { u, lat, lng, firstName, lastName, teamName, teamColor, avatarUrl, role, speed, batteryLevel, isCharging, updatedAt, accuracy, isSafeZone, statusType, isImmune } = user; const isNeutral = role !== 'teammate' && role !== 'target'; const shouldDisplay = showAllPlayers || !isNeutral; if (!shouldDisplay) return; const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase(); const fullTeamName = (teamName || '').toLowerCase(); const isMatch = searchTerms.length === 0 || searchTerms.some(term => fullName.includes(term) || fullTeamName.includes(term)); if (isMatch) { updatedUids.add(u); foundPlayerCoords.push(L.latLng(lat, lng)); let popupContent; const isLastKnown = statusType === 'safeZone' || statusType === 'stealthed'; if (isLastKnown && !isImmune) { popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#999'};"><span>${firstName} ${lastName}</span></div><div class="popup-body"><strong>Status:</strong> ${statusType === 'safeZone' ? 'In Safe Zone' : 'Stealthed'}<br><strong>Last Known Location</strong></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } else { const batteryIcon = isCharging ? '⚡' : '🔋'; const batteryStatus = `${(batteryLevel * 100).toFixed(0)}% ${batteryIcon}`; let roleLabel = ''; if (role === 'target') roleLabel = '<span class="role-label target">TARGET</span>'; else if (role === 'teammate') roleLabel = '<span class="role-label teammate">TEAMMATE</span>'; const immunityStatus = isImmune ? '<strong>Status:</strong> <span style="color: #3498db;">Immune</span><br>' : ''; popupContent = `<div class="popup-header" style="background-color: ${teamColor || '#3388ff'};"><span>${firstName} ${lastName}</span>${roleLabel}</div><div class="popup-body">${immunityStatus}<strong>Team:</strong> ${teamName || 'N/A'}<br><strong>Speed:</strong> ${speed.toFixed(1)} m/s<br><strong>Accuracy:</strong> ${accuracy.toFixed(0)} m<br><strong>Battery:</strong> ${batteryStatus}<br></div><div class="popup-actions"><button class="popup-directions-btn" onclick="getDirections(this)" data-lat="${lat}" data-lng="${lng}">Get Directions</button></div><div class="popup-footer">Last update: ${updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'N/A'}</div>`; } const isStealthed = statusType === 'stealthed'; const playerIcon = createAvatarIcon(teamColor || '#3388ff', avatarUrl, role, isSafeZone, isLastKnown, isStealthed, isImmune); if (currentMarkers[u]) { currentMarkers[u].setLatLng([lat, lng]).setIcon(playerIcon).setPopupContent(popupContent); } else { currentMarkers[u] = L.marker([lat, lng], { icon: playerIcon }).bindPopup(popupContent); } markers.addLayer(currentMarkers[u]); } }); const currentlyTracked = markers.getLayers().length; const subtitleEl = document.querySelector('.subtitle'); if (subtitleEl.textContent !== 'Connecting...' && subtitleEl.textContent !== 'Authenticating...') { subtitleEl.textContent = `Tracking ${currentlyTracked} players on map.`; } if (markers.getLayers().length === 0 && searchTerms.length > 0) { findAndExpandList(searchTerms[0]); } else { document.querySelectorAll('li.highlighted').forEach(el => el.classList.remove('highlighted')); } if (shouldFitBounds) { if (searchTerms.length > 0 && foundPlayerCoords.length > 0) { if (foundPlayerCoords.length > 1) { map.fitBounds(L.latLngBounds(foundPlayerCoords), { padding: [50, 50], maxZoom: 16 }); } else { map.setView(foundPlayerCoords[0], 16); if (updatedUids.size === 1) { const singleMarker = currentMarkers[updatedUids.values().next().value]; if (singleMarker) singleMarker.openPopup(); } } } else { const allVisibleCoords = allPlayersWithLocation.filter(p => showAllPlayers || p.role === 'teammate' || p.role === 'target').map(p => L.latLng(p.lat, p.lng)); if (allVisibleCoords.length > 0) { map.fitBounds(L.latLngBounds(allVisibleCoords), { padding: [50, 50] }); } } } for (const uid in currentMarkers) { if (!updatedUids.has(uid)) delete currentMarkers[uid]; } }  async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
+// --- Notification Modal & Accordion Logic (Unchanged) ---
+async function handleSubscribeClick() { if (!window.OneSignal) return; try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { alert('Notifications are blocked. Please enable them in your browser settings and try again.'); return; } await OneSignal.User.PushSubscription.optIn(); console.log('User successfully opted in.'); await checkSubscriptionStatus(); } catch (error) { console.error('Subscription error:', error); } }
+async function handleUnsubscribeClick() { if (!window.OneSignal) return; try { await OneSignal.User.PushSubscription.optOut(); console.log('User successfully opted out.'); await checkSubscriptionStatus(); } catch (error) { console.error('Unsubscription error:', error); } }
 async function checkSubscriptionStatus() { if (!window.OneSignal) return; const subscribeContainer = document.querySelector('.onesignal-customlink-container'); subscribeContainer.innerHTML = ''; const button = document.createElement('button'); try { const permission = await OneSignal.Notifications.permission; if (permission === 'denied') { button.textContent = 'Enable Notifications (Blocked)'; button.onclick = () => alert('Notifications are blocked. Please enable them in your browser settings and try again.'); button.className = 'subscribe-btn disabled'; } else if (OneSignal.User && OneSignal.User.PushSubscription) { const isSubscribed = OneSignal.User.PushSubscription.optedIn; button.textContent = isSubscribed ? 'Unsubscribe from Push Notifications' : 'Subscribe to Push Notifications'; button.onclick = isSubscribed ? handleUnsubscribeClick : handleSubscribeClick; button.className = isSubscribed ? 'unsubscribe-btn' : 'subscribe-btn'; } else { button.textContent = 'Push Notifications Not Supported'; button.disabled = true; button.className = 'subscribe-btn disabled'; } subscribeContainer.appendChild(button); } catch (error) { console.error('Error checking subscription status:', error); button.textContent = 'Notifications Unavailable'; button.disabled = true; button.className = 'subscribe-btn disabled'; subscribeContainer.appendChild(button); } }
-function setupNotificationModal(teammates) { const modalOverlay = document.getElementById('notification-modal-overlay'); const openBtn = document.getElementById('notification-btn'); const closeBtn = document.getElementById('modal-close-btn'); const playerSelectionStep = document.getElementById('player-selection-step'); const settingsStep = document.getElementById('notification-settings-step'); const teammateList = document.getElementById('teammate-list'); const changePlayerLink = document.getElementById('change-player-link'); const saveBtn = document.getElementById('save-settings-btn'); const settingsTitle = settingsStep.querySelector('h2'); const testBtn = document.getElementById('test-notification-btn'); teammateList.innerHTML = ''; if (teammates && teammates.length > 0) { teammates.forEach(player => { const li = document.createElement('li'); li.textContent = player.name; li.dataset.id = player.id; li.onclick = () => { localStorage.setItem('myPlayerId', player.id); localStorage.setItem('myPlayerName', player.name); showUserSettings(player.name); }; teammateList.appendChild(li); }); } else { playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.'; } const showUserSettings = (playerName) => { playerSelectionStep.style.display = 'none'; settingsStep.style.display = 'block'; settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`; loadSettings(); checkSubscriptionStatus(); }; openBtn.onclick = () => { modalOverlay.style.display = 'flex'; const myPlayerId = localStorage.getItem('myPlayerId'); const myPlayerName = localStorage.getItem('myPlayerName'); if (myPlayerId && myPlayerName) { showUserSettings(myPlayerName); } else { playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; checkSubscriptionStatus(); } }; changePlayerLink.onclick = async (e) => { e.preventDefault(); if (window.OneSignal) { await window.OneSignal.logout(); console.log('Logged out of OneSignal identity.'); } localStorage.removeItem('myPlayerId'); localStorage.removeItem('myPlayerName'); playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; }; const closeModal = () => modalOverlay.style.display = 'none'; closeBtn.onclick = closeModal; modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); }; const enableNotifications = document.getElementById('enable-notifications'); const fieldset = document.getElementById('notification-fieldset');
-                                            const proximitySlider = document.getElementById('proximity-radius'); 
-                                            const proximityValue = document.getElementById('proximity-value'); const ghostSlider = document.getElementById('ghost-radius'); const ghostValue = document.getElementById('ghost-value'); const ghostWorldwide = document.getElementById('ghost-worldwide'); enableNotifications.onchange = () => { fieldset.disabled = !enableNotifications.checked; }; proximitySlider.oninput = () => { proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off'; updateProximityCircle(); }; ghostSlider.oninput = () => { ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'; }; ghostWorldwide.onchange = () => { ghostSlider.disabled = ghostWorldwide.checked; ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'); }; function loadSettings() { const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {}; enableNotifications.checked = settings.hasOwnProperty('enabled') ? settings.enabled : true; proximitySlider.value = settings.proximityMiles || 0; ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0; ghostWorldwide.checked = settings.ghostMiles === -1; proximitySlider.dispatchEvent(new Event('input')); ghostSlider.dispatchEvent(new Event('input')); ghostWorldwide.dispatchEvent(new Event('change')); enableNotifications.dispatchEvent(new Event('change')); } saveBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (parseFloat(proximitySlider.value) > 0 && !myPlayerId) { alert("Please select your player profile to enable proximity alerts."); return; } const settings = { myPlayerId: myPlayerId, enabled: enableNotifications.checked, proximityMiles: parseFloat(proximitySlider.value), ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value) }; localStorage.setItem('notificationSettings', JSON.stringify(settings)); socket.emit('update_notification_settings', settings); try { if (settings.myPlayerId) { console.log(`Logging into OneSignal with external_id: ${settings.myPlayerId}`); await window.OneSignal.login(settings.myPlayerId); console.log(`Successfully identified user to OneSignal.`); } else { await window.OneSignal.logout(); } } catch (error) { console.error('OneSignal login/logout error:', error); alert('Could not update your notification identity. Please try again.'); } closeModal(); alert('Alert preferences saved!'); }; testBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (!myPlayerId) { alert('Please select your player profile and save settings before sending a test.'); return; } console.log(`Requesting test notification for external_id: ${myPlayerId}`); try { const res = await fetch('/test-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalId: myPlayerId }) }); const data = await res.json(); if (!res.ok) { throw new Error(data.message || 'Unknown server error'); } alert('✅ Test notification request sent successfully!'); } catch (e) { console.error("Test notification error:", e); alert(`⚠️ Error sending test notification: ${e.message}`); } }; }
+function setupNotificationModal(teammates) { const modalOverlay = document.getElementById('notification-modal-overlay'); const openBtn = document.getElementById('notification-btn'); const closeBtn = document.getElementById('modal-close-btn'); const playerSelectionStep = document.getElementById('player-selection-step'); const settingsStep = document.getElementById('notification-settings-step'); const teammateList = document.getElementById('teammate-list'); const changePlayerLink = document.getElementById('change-player-link'); const saveBtn = document.getElementById('save-settings-btn'); const settingsTitle = settingsStep.querySelector('h2'); const testBtn = document.getElementById('test-notification-btn'); teammateList.innerHTML = ''; if (teammates && teammates.length > 0) { teammates.forEach(player => { const li = document.createElement('li'); li.textContent = player.name; li.dataset.id = player.id; li.onclick = () => { localStorage.setItem('myPlayerId', player.id); localStorage.setItem('myPlayerName', player.name); showUserSettings(player.name); }; teammateList.appendChild(li); }); } else { playerSelectionStep.querySelector('p').textContent = 'No teammates are available to select for notifications at this time.'; } const showUserSettings = (playerName) => { playerSelectionStep.style.display = 'none'; settingsStep.style.display = 'block'; settingsTitle.innerHTML = `Notification Settings for <span id="my-player-name">${playerName}</span>`; loadSettings(); checkSubscriptionStatus(); }; openBtn.onclick = () => { modalOverlay.style.display = 'flex'; const myPlayerId = localStorage.getItem('myPlayerId'); const myPlayerName = localStorage.getItem('myPlayerName'); if (myPlayerId && myPlayerName) { showUserSettings(myPlayerName); } else { playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; checkSubscriptionStatus(); } }; changePlayerLink.onclick = async (e) => { e.preventDefault(); if (window.OneSignal) { await window.OneSignal.logout(); console.log('Logged out of OneSignal identity.'); } localStorage.removeItem('myPlayerId'); localStorage.removeItem('myPlayerName'); playerSelectionStep.style.display = 'block'; settingsStep.style.display = 'none'; }; const closeModal = () => modalOverlay.style.display = 'none'; closeBtn.onclick = closeModal; modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); }; const enableNotifications = document.getElementById('enable-notifications'); const fieldset = document.getElementById('notification-fieldset'); const proximitySlider = document.getElementById('proximity-radius'); const proximityValue = document.getElementById('proximity-value'); const ghostSlider = document.getElementById('ghost-radius'); const ghostValue = document.getElementById('ghost-value'); const ghostWorldwide = document.getElementById('ghost-worldwide'); enableNotifications.onchange = () => { fieldset.disabled = !enableNotifications.checked; }; proximitySlider.oninput = () => { proximityValue.textContent = proximitySlider.value > 0 ? `${proximitySlider.value} mi` : 'Off'; updateProximityCircle(); }; ghostSlider.oninput = () => { ghostValue.textContent = ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'; }; ghostWorldwide.onchange = () => { ghostSlider.disabled = ghostWorldwide.checked; ghostValue.textContent = ghostWorldwide.checked ? 'Worldwide' : (ghostSlider.value > 0 ? `${ghostSlider.value} mi` : 'Off'); }; function loadSettings() { const settings = JSON.parse(localStorage.getItem('notificationSettings')) || {}; enableNotifications.checked = settings.hasOwnProperty('enabled') ? settings.enabled : true; proximitySlider.value = settings.proximityMiles || 0; ghostSlider.value = settings.ghostMiles > 0 ? settings.ghostMiles : 0; ghostWorldwide.checked = settings.ghostMiles === -1; proximitySlider.dispatchEvent(new Event('input')); ghostSlider.dispatchEvent(new Event('input')); ghostWorldwide.dispatchEvent(new Event('change')); enableNotifications.dispatchEvent(new Event('change')); } saveBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (parseFloat(proximitySlider.value) > 0 && !myPlayerId) { alert("Please select your player profile to enable proximity alerts."); return; } const settings = { myPlayerId: myPlayerId, enabled: enableNotifications.checked, proximityMiles: parseFloat(proximitySlider.value), ghostMiles: ghostWorldwide.checked ? -1 : parseFloat(ghostSlider.value) }; localStorage.setItem('notificationSettings', JSON.stringify(settings)); socket.emit('update_notification_settings', settings); try { if (settings.myPlayerId) { await window.OneSignal.login(settings.myPlayerId); } else { await window.OneSignal.logout(); } } catch (error) { console.error('OneSignal login/logout error:', error); alert('Could not update your notification identity. Please try again.'); } closeModal(); alert('Alert preferences saved!'); }; testBtn.onclick = async () => { const myPlayerId = localStorage.getItem('myPlayerId'); if (!myPlayerId) { alert('Please select your player profile and save settings before sending a test.'); return; } try { const res = await fetch('/test-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalId: myPlayerId }) }); const data = await res.json(); if (!res.ok) { throw new Error(data.message || 'Unknown server error'); } alert('✅ Test notification request sent successfully!'); } catch (e) { console.error("Test notification error:", e); alert(`⚠️ Error sending test notification: ${e.message}`); } }; }
 socket.on('disconnect', () => document.querySelector('.subtitle').textContent = 'Disconnected...');
-function setupAccordionPanels() {
-    const panels = [
-        { 
-            header: document.getElementById('safezone-header'), 
-            container: document.getElementById('safezone-container'), 
-            icon: document.getElementById('safezone-toggle-icon') 
-        },
-        { 
-            header: document.getElementById('stealth-header'), 
-            container: document.getElementById('stealth-container'), 
-            icon: document.getElementById('stealth-toggle-icon') 
-        },
-        { 
-            header: document.getElementById('not-located-header'), 
-            container: document.getElementById('not-located-container'), 
-            icon: document.getElementById('toggle-icon') 
-        }
-    ];
-
-    panels.forEach(clickedPanel => {
-        if (!clickedPanel.header) return; // Skip if element doesn't exist
-
-        clickedPanel.header.addEventListener('click', () => {
-            // Check if the clicked panel is already open
-            const isAlreadyOpen = !clickedPanel.container.classList.contains('minimized');
-
-            // First, close all panels
-            panels.forEach(panel => {
-                panel.container.classList.add('minimized');
-                panel.icon.textContent = '+';
-            });
-
-            // If the clicked panel was NOT already open, then open it.
-            // This makes clicking an open panel simply close it without opening another.
-            if (!isAlreadyOpen) {
-                clickedPanel.container.classList.remove('minimized');
-                clickedPanel.icon.textContent = '-';
-            }
-        });
-    });
-}
-
-// Initialize the new behavior
+function setupAccordionPanels() { const panels = [ { header: document.getElementById('safezone-header'), container: document.getElementById('safezone-container'), icon: document.getElementById('safezone-toggle-icon') }, { header: document.getElementById('stealth-header'), container: document.getElementById('stealth-container'), icon: document.getElementById('stealth-toggle-icon') }, { header: document.getElementById('not-located-header'), container: document.getElementById('not-located-container'), icon: document.getElementById('toggle-icon') } ]; panels.forEach(clickedPanel => { if (!clickedPanel.header) return; clickedPanel.header.addEventListener('click', () => { const isAlreadyOpen = !clickedPanel.container.classList.contains('minimized'); panels.forEach(panel => { panel.container.classList.add('minimized'); panel.icon.textContent = '+'; }); if (!isAlreadyOpen) { clickedPanel.container.classList.remove('minimized'); clickedPanel.icon.textContent = '-'; } }); }); }
 setupAccordionPanels();
-
-  function setupMobilePanelToggle() {
-    const grabber = document.getElementById('panel-grabber');
-    const controlsContainer = document.getElementById('controls-container');
-
-    if (grabber && controlsContainer) {
-        grabber.addEventListener('click', () => {
-            controlsContainer.classList.toggle('panel-collapsed');
-        });
-    }
-}
-  
+function setupMobilePanelToggle() { const grabber = document.getElementById('panel-grabber'); const controlsContainer = document.getElementById('controls-container'); if (grabber && controlsContainer) { grabber.addEventListener('click', () => { controlsContainer.classList.toggle('panel-collapsed'); }); } }
+setupMobilePanelToggle();
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
