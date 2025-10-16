@@ -534,7 +534,7 @@ async function runApiRequests() {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
                 mapWasUpdated = true;
             }
-            console.log(richData.is_safe_expires_at)
+            console.log(richData.first_name + ": " + richData.is_safe_expires_at)
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
             
             const playerInfo = {
@@ -705,6 +705,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
