@@ -548,6 +548,7 @@ async function runApiRequests() {
                 isImmune: isImmune,
                 immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null
             };
+            console.log(playerInfo);
 
             const isInGeographicSafeZone = locData.isz === true || locData.isz === 'true';
 
@@ -704,6 +705,7 @@ async function startServer() {
     server.listen(PORT, () => console.log(`Server is ready on http://localhost:${PORT}`));
 }
 startServer();
+
 
 
 
