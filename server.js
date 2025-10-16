@@ -531,7 +531,8 @@ async function runApiRequests() {
                 playerLastKnownLocationMap.set(locData.u, { lat, lng, updatedAt: locData.up });
                 mapWasUpdated = true;
             }
-
+            
+            // MODIFICATION: Explicitly check for immunity and get expiration time
             const isImmune = !!(richData.is_safe_expires_at && new Date(richData.is_safe_expires_at) > new Date());
 
             const playerInfo = {
@@ -542,10 +543,10 @@ async function runApiRequests() {
                 teamColor: richData.team_color || '#3388ff',
                 avatarUrl: richData.avatar_path_small ? AVATAR_BASE_URL + richData.avatar_path_small : null,
                 teamId: richData.team_id,
-                isImmune: isImmune
+                isImmune: isImmune, // Pass immunity status
+                immunityExpiresAt: isImmune ? richData.is_safe_expires_at : null // Pass expiration time
             };
             const isInSafeZone = richData.is_safe || locData.isz; 
-            const isSafe = richData.is_safe || locData.isz;
             const isStealth = (locData.l === null && locData.a === null) && !isInSafeZone;
 
             if (isInSafeZone || isStealth) {
@@ -562,6 +563,7 @@ async function runApiRequests() {
 
         if (mapWasUpdated) saveMapToFile();
 
+        // ... (The rest of runApiRequests, including stealth handling and broadcast, is unchanged)
         // --------------------
         // Handle Stealthed Players
         // --------------------
@@ -699,4 +701,5 @@ async function startServer() {
 }
 
 startServer();
+
 
