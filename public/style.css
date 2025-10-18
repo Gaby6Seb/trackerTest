@@ -68,8 +68,9 @@ body {
     position: absolute; top: 100px; right: 15px; z-index: 1000;
     background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2); max-width: 320px; width: 90vw;
-    max-height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 15px;
+    max-height: calc(100vh - 120px); display: flex; flex-direction: column;
 }
+#collapsible-controls-area { display: flex; flex-direction: column; gap: 15px; }
 
 /* Search Container & Clear Button */
 #search-container {
@@ -99,28 +100,31 @@ body {
 }
 
 /* Collapsible containers */
-#not-located-container, #safezone-container, #stealth-container {
+/* #################################################################### */
+/* ### FIX: Changed all `safezone-` selectors to `safe-`            ### */
+/* #################################################################### */
+#not-located-container, #safe-container, #stealth-container {
     overflow: hidden; flex-shrink: 1; min-height: 0; display: flex; flex-direction: column;
     border-top: 1px solid #eee; padding-top: 15px;
 }
-#controls-container > div:first-child { border-top: none; padding-top: 0; }
-#not-located-header, #safezone-header, #stealth-header {
+#collapsible-controls-area > div:first-child { border-top: none; padding-top: 0; }
+#not-located-header, #safe-header, #stealth-header {
     cursor: pointer; user-select: none; margin: 0; padding-bottom: 8px; font-size: 1.1em;
     display: flex; justify-content: space-between; align-items: center;
 }
-#toggle-icon, #safezone-toggle-icon, #stealth-toggle-icon {
+#toggle-icon, #safe-toggle-icon, #stealth-toggle-icon {
     font-weight: bold; font-size: 1.4em; line-height: 1; color: #888;
 }
-#not-located-list, #safezone-list, #stealth-list {
+#not-located-list, #safe-list, #stealth-list {
     list-style: none; padding: 0; margin: 0; overflow-y: auto;
     transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
     max-height: 200px; opacity: 1;
 }
-#not-located-list li, #safezone-list li, #stealth-list li {
+#not-located-list li, #safe-list li, #stealth-list li {
     padding: 4px 8px; font-size: 0.9em; border-radius: 4px;
 }
 #not-located-container.minimized #not-located-list,
-#safezone-container.minimized #safezone-list,
+#safe-container.minimized #safe-list,
 #stealth-container.minimized #stealth-list {
     max-height: 0; opacity: 0;
 }
@@ -128,13 +132,9 @@ body {
 .clickable-list-item:hover { background-color: #e9ecef; }
 li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bold; transition: background-color 0.3s; }
 
+
 /* Marker Styles */
-.safezone-marker .marker-pin-avatar::after, .safezone-marker .marker-pin::after {
-    content: '🛡️'; position: absolute; top: -8px; right: -8px; font-size: 16px;
-    background: rgba(255, 255, 255, 0.8); border-radius: 50%; padding: 2px;
-    line-height: 1; text-shadow: 0 0 2px #000;
-}
-.safezone-marker .marker-pin::after { top: -20px; right: -20px; transform: rotate(45deg); }
+/* ### FIX: Removed redundant .safezone-marker::after rule. The .marker-shield class handles this now. ### */
 .last-known-marker .marker-pin, .last-known-marker .marker-pin-avatar { opacity: 0.6; filter: grayscale(80%); }
 .marker-pin {
     width: 30px; height: 30px; border-radius: 50% 50% 50% 0; background: #007bff;
@@ -277,6 +277,48 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
 }
 .toggle-switch:checked::before { left: 26px; }
 
+/* Location Tracking Styles */
+#location-control {
+    padding: 5px 10px;
+}
+#find-me-btn {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+#find-me-btn.tracking {
+    background-color: #e74c3c;
+    color: white;
+    border-color: #c0392b;
+}
+.my-location-marker {
+    background-color: #3498db;
+    border: 3px solid white;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    width: 18px;
+    height: 18px;
+}
+.my-location-marker::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: rgba(52, 152, 219, 0.5);
+    transform: translate(-50%, -50%);
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+    100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+
 /* Mobile Layout Adjustments */
 @media (max-width: 767px) {
     .header { 
@@ -293,27 +335,24 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
         width: 100%; max-width: none;
         border-radius: 15px 15px 0 0; 
         box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
-        padding: 0 15px 15px; /* Remove top padding */
+        padding: 0 15px 15px;
         max-height: 45vh; /* Default expanded height */
         box-sizing: border-box;
-        gap: 0; /* Remove gap from main container */
-        transition: max-height 0.3s ease-in-out; /* Smooth collapse animation */
+        gap: 0;
+        transition: max-height 0.3s ease-in-out;
     }
-
-    /* Collapsed State: Panel is just tall enough for the header bar */
     #controls-container.panel-collapsed {
-        max-height: 60px; 
+        max-height: 52px; 
     }
-
-    /* The new header bar for primary controls */
+    
     #mobile-panel-header {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        padding: 12px 0;
+        padding: 8px 0;
         gap: 10px;
     }
-
-    /* The "grabber" handle */
+    
     #panel-grabber {
         flex-shrink: 0;
         width: 40px;
@@ -322,108 +361,28 @@ li.highlighted { background-color: #e7f3ff; border-radius: 4px; font-weight: bol
         border-radius: 3px;
         cursor: pointer;
     }
+    #mobile-panel-header > div { width: 100%; }
 
-    /* Search takes up most of the space */
-    #search-container {
-        flex-grow: 1;
-        border: none;
-        padding: 0;
-    }
-    #player-search {
-        padding: 8px 30px 8px 10px; /* Adjust padding for smaller height */
-    }
-    #clear-search-btn {
-        font-size: 1.6em;
-    }
+    #search-container, #location-control { display: flex; align-items: center; gap: 10px;}
+    #search-container { flex-grow: 1; }
+    #player-search { flex-grow: 1; padding: 8px 30px 8px 10px; }
+    #clear-search-btn { font-size: 1.6em; }
     
-    /* Find Me button is compact */
-    #location-control {
-        flex-shrink: 0;
-        padding: 0;
-        display: flex; /* Make button and label align nicely */
-        align-items: center;
-        gap: 5px;
-    }
-    #find-me-btn {
-        padding: 6px 10px; /* Smaller button */
-    }
-    #follow-me-label {
-        margin-left: 0; /* Remove old margin */
-    }
+    #find-me-btn { flex-shrink: 0; padding: 6px 10px; }
 
-    /* Area for the accordion lists */
     #collapsible-controls-area {
         overflow-y: auto;
     }
-    
     #filter-toggles { padding-top: 10px; }
-
-    #not-located-list, #safezone-list, #stealth-list { 
+    #not-located-list, #safe-list, #stealth-list { 
         max-height: 25vh; 
     }
 
-    /* Desktop styles that we need to hide on mobile */
-    #controls-container > #search-container,
-    #controls-container > #location-control,
-    #controls-container > #filter-toggles {
-        display: none;
+    /* Override Desktop structure by combining header controls onto one line */
+    @media (min-width: 400px) {
+        #mobile-panel-header {
+            flex-direction: row;
+        }
+        #panel-grabber { margin-right: 10px; }
     }
 }
-
-/* style.css */
-
-/* Style for the 'Find Me' button container */
-#location-control {
-    padding: 5px 10px;
-}
-
-#find-me-btn {
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    background-color: #f9f9f9;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-#find-me-btn.tracking {
-    background-color: #e74c3c;
-    color: white;
-    border-color: #c0392b;
-}
-
-/* Style for the user's own location marker */
-.my-location-marker {
-    background-color: #3498db; /* A distinct blue */
-    border: 3px solid white;
-    border-radius: 50%;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
-    width: 18px;
-    height: 18px;
-}
-
-/* Optional: a pulse effect for the user's location */
-.my-location-marker::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background-color: rgba(52, 152, 219, 0.5);
-    transform: translate(-50%, -50%);
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0% {
-        transform: translate(-50%, -50%) scale(1);
-        opacity: 0.6;
-    }
-    100% {
-        transform: translate(-50%, -50%) scale(3);
-        opacity: 0;
-    }
-}
-
